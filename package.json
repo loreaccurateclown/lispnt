@@ -1,0 +1,15 @@
+{
+  "name": "lispnt",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Lispnt - a gentle, read-only diagnostic path for Common Lisp (SBCL), alongside OLIVE.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node dist/test/reader.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "7.0.2"
+  }
+}
