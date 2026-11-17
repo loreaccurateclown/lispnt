@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse, parseAll, type AstNode } from "../src/core/reader";
+import { ReaderError } from "../src/core/errors";
 
 //Position and atoms tests
 test("guards the origin conventions", () => {
@@ -624,4 +625,82 @@ test("still parses a # not followed by a paren as an atom", () => {
     value: "#\\a",
     start: { line: 1, column: 1, offset: 0 },
   });
+});
+
+//LLM-written tests
+function expectReaderError(source: string): ReaderError {
+  try {
+    parse(source);
+  } catch (error) {
+    if (error instanceof ReaderError) {
+      return error;
+    }
+    throw error;
+  }
+
+  assert.fail(`expected ${JSON.stringify(source)} to throw a ReaderError`);
+}
+
+test("reports a stray closer with its own position", () => {
+  const error = expectReaderError(")");
+
+  assert.equal(error.code, "stray-closer");
+  assert.deepEqual(error.position, { line: 1, column: 1, offset: 0 });
+});
+
+test("reports an unterminated list at the opening paren", () => {
+  const error = expectReaderError("(");
+
+  assert.equal(error.code, "unterminated-list");
+  assert.deepEqual(error.position, { line: 1, column: 1, offset: 0 });
+});
+
+test("reports an unterminated string at the opening quote", () => {
+  const error = expectReaderError('"hi');
+
+  assert.equal(error.code, "unterminated-string");
+  assert.deepEqual(error.position, { line: 1, column: 1, offset: 0 });
+});
+
+test("reports an unterminated block comment at the #", () => {
+  const error = expectReaderError("#| a");
+
+  assert.equal(error.code, "unterminated-block-comment");
+  assert.deepEqual(error.position, { line: 1, column: 1, offset: 0 });
+});
+
+test("reports empty input", () => {
+  const error = expectReaderError("");
+
+  assert.equal(error.code, "empty-input");
+  assert.deepEqual(error.position, { line: 1, column: 1, offset: 0 });
+});
+
+test("reports trailing content at the first stray character", () => {
+  const error = expectReaderError("a b");
+
+  assert.equal(error.code, "trailing-content");
+  assert.deepEqual(error.position, { line: 1, column: 3, offset: 2 });
+});
+
+test("reports a dangling quote at end of input", () => {
+  const error = expectReaderError("'");
+
+  assert.equal(error.code, "unexpected-eof");
+  assert.deepEqual(error.position, { line: 1, column: 2, offset: 1 });
+});
+
+test("ReaderError carries its fields and is an Error", () => {
+  const error = new ReaderError(
+    "stray-closer",
+    { line: 2, column: 5, offset: 7 },
+    "stray closer",
+  );
+
+  assert.ok(error instanceof ReaderError);
+  assert.ok(error instanceof Error);
+  assert.equal(error.name, "ReaderError");
+  assert.equal(error.code, "stray-closer");
+  assert.equal(error.message, "stray closer");
+  assert.deepEqual(error.position, { line: 2, column: 5, offset: 7 });
 });

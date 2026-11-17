@@ -1,3 +1,5 @@
+import { ReaderError } from "./errors";
+
 export interface Position {
   readonly line: number;
   readonly column: number;
@@ -115,12 +117,18 @@ export function createReader(source: string): Reader {
           c = peek(); //assuming this runs to the end of the comment (eof or newline)
         }
       } else if (ch === "#" && peekAt(1) === "|") {
+        const blockCommentStart = here();
         advance();
         advance(); //move over two characters
         let depth = 1;
         while (depth > 0) {
           const c = peek(); //assuming const means it won't get overwritten every loop iter here
-          if (c === undefined) throw Error("unterminated sequence");
+          if (c === undefined)
+            throw new ReaderError(
+              "unterminated-block-comment",
+              blockCommentStart,
+              "unterminated block comment",
+            );
           if (c === "#" && peekAt(1) === "|") {
             advance();
             advance(); //as janky as this looks it's still better than making an advanceBy helper imo
@@ -174,13 +182,17 @@ export function createReader(source: string): Reader {
       ch //I think the fishtention was to use if statements here but I can't resist a good switch case
     ) {
       case undefined:
-        throw Error("unexpected end of input");
+        throw new ReaderError(
+          "unexpected-eof",
+          here(),
+          "unexpected end of input (EOF)",
+        ); //transitioned from plain Error throws to our own class that extends Error
       case "(":
         return readList(); //JS hoisting is a neat concept but feels strange
       case '"':
         return readString();
       case ")":
-        throw Error("stray closer detected");
+        throw new ReaderError("stray-closer", here(), "stray closer detected");
       case "'": //I initially wrote this switch statement on a whim but it's actually paid off massively for easily adding conditionals. Go figure.
         return readQuote();
       case "#":
@@ -210,7 +222,8 @@ export function createReader(source: string): Reader {
       // but it's probably more dangerous trying to automate it/move it to the called funcs
       ch = peek(); //starting to recognize this pattern
     }
-    if (ch === undefined) throw Error("unterminated sequence"); //dunno if that's the right error string.
+    if (ch === undefined)
+      throw new ReaderError("unterminated-list", start, "unterminated list");
     advance();
     const end = here(); //as above, so below
 
@@ -243,7 +256,12 @@ export function createReader(source: string): Reader {
         //Was confused why my char was 2 chars here till I realized you also need to escape it as a string in JS
         advance();
         const next = peek();
-        if (next === undefined) throw Error("unterminated string"); //dunno about error string but its unique at least
+        if (next === undefined)
+          throw new ReaderError(
+            "unterminated-string",
+            start,
+            "unterminated string",
+          );
         chars.push(next);
         advance();
       } else {
@@ -253,7 +271,12 @@ export function createReader(source: string): Reader {
       ch = peek();
     }
 
-    if (ch === undefined) throw Error("unterminated string");
+    if (ch === undefined)
+      throw new ReaderError(
+        "unterminated-string",
+        start,
+        "unterminated string",
+      );
     advance();
 
     return {
@@ -277,10 +300,15 @@ export function createReader(source: string): Reader {
     //Actual body of parse
     skipTrivia(); //no trivia!
     if (peek() === undefined)
-      throw Error("End of File or unterminated sequence"); //could be either I guess?
+      throw new ReaderError("empty-input", here(), "undefined input"); //could be either I guess?
     const node = readNode();
     skipTrivia(); //absolutely none!
-    if (peek() !== undefined) throw Error("form contains extra data");
+    if (peek() !== undefined)
+      throw new ReaderError(
+        "trailing-content",
+        here(),
+        "form contains extra data",
+      );
     /* So we will apparently loop this to read multiple top-level forms (i.e. defun, defvar)
       and thus this should terminate cleanly after reading one form, extra data is invalid */
     return node;
