@@ -1,3 +1,4 @@
+import { diagnosticFromError } from "./diagnostics";
 import { ReaderError } from "./errors";
 
 export interface Position {
@@ -28,16 +29,21 @@ export interface QuoteNode {
   readonly start: Position; //'
   readonly end: Position;
 }
-
 export interface Reader {
   parse(): AstNode;
   parseAll(): AstNode[];
+  next(): NextResult;
 }
+
+export type AstNode = AtomNode | ListNode | QuoteNode;
+
+export type NextResult = //for Slice 3 - recovery after analysis
+  | { kind: "node"; node: AstNode }
+  | { kind: "error"; error: ReaderError }
+  | { kind: "end" };
 
 const carriageReturnsAndSpaces = [" ", "\t", "\n", "\r"]; //Is there an award for worst var names
 const atomDelimiters = [...carriageReturnsAndSpaces, "(", ")"]; //spread operator pretty cool! fish wants a helper function but idk
-
-export type AstNode = AtomNode | ListNode | QuoteNode;
 
 export function parse(source: string): AstNode {
   //this used to be createReader, then fish told me to turn it into a factory
@@ -316,12 +322,36 @@ export function createReader(source: string): Reader {
 
   function parseAll(): AstNode[] {
     const nodes: AstNode[] = [];
-    skipTrivia(); //trivia is eternal
-    while (peek() !== undefined) {
-      nodes.push(readNode());
-      skipTrivia();
+    while (true) { //it's over...
+      const result = next();
+      switch(result.kind) {
+        case "end":
+          return nodes;
+        case "error":
+          throw result.error;
+        case "node":
+          nodes.push(result.node);
+          break;
+      }
     }
-    return nodes;
   }
-  return { parse, parseAll };
+  // //reference:
+  //   | { kind: "node"; node: AstNode }
+  //   | { kind: "error"; error: ReaderError }
+  //   | { kind: "end" };
+  function next(): NextResult {
+    //approved of this function after discussing the cost/benefit of modular, reusable code with the fish. Harder to comprehend on the writer's end but much better from the execution end.
+    skipTrivia();
+    if (peek() === undefined) return { kind: "end" };
+
+    try {
+      return { kind: "node", node: readNode() };
+    } catch (error) {
+      if (!(error instanceof ReaderError)) throw error;
+      if (peek() !== undefined) advance(); //move to next character, I assume to avoid chain-erroring in place (with basic EOF check)
+      return { kind: "error", error };
+    }
+  }
+
+  return { parse, parseAll, next };
 }

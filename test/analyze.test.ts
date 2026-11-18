@@ -43,3 +43,27 @@ test("reports an error that occurs after a valid first form", () => {
   assert.equal(diagnostics[0]?.code, "stray-closer");
   assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 4, offset: 3 });
 });
+
+test("reports one diagnostic per stray closer", () => {
+  const diagnostics = analyze(") ) )");
+
+  assert.equal(diagnostics.length, 3);
+  assert.deepEqual(
+    diagnostics.map((diagnostic) => diagnostic.code),
+    ["stray-closer", "stray-closer", "stray-closer"],
+  );
+  assert.deepEqual(
+    diagnostics.map((diagnostic) => diagnostic.position.offset),
+    [0, 2, 4],
+  );
+});
+
+test("keeps recovering after a valid form", () => {
+  const diagnostics = analyze("()))))");
+
+  assert.equal(diagnostics.length, 4);
+  assert.deepEqual(
+    diagnostics.map((diagnostic) => diagnostic.position.offset),
+    [2, 3, 4, 5],
+  );
+});
