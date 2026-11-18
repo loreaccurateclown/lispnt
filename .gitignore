@@ -1,5 +1,7 @@
 node_modules/
 dist/
 .npm-cache/
+.dsh-code-index/
 *.tsbuildinfo
 *.fasl
+*.tmp
