@@ -3,9 +3,17 @@ import type { Position } from "./reader";
 
 export type DiagnosticSeverity = "error" | "warning" | "info";
 
+export type ShapeCode =
+  | "defun-name"
+  | "defun-arglist"
+  | "lambda-arglist"
+  | "let-bindings";
+
+export type DiagnosticCode = ReaderErrorCode | ShapeCode;
+
 export interface Diagnostic {
   //ideally this naming won't collide with vscode.Diagnostic
-  readonly code: ReaderErrorCode; //to be widened when we actually parse the AST's meaning
+  readonly code: DiagnosticCode; 
   readonly severity: DiagnosticSeverity;
   readonly message: string;
   readonly position: Position; //one position for now, will be converted into range later

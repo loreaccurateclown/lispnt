@@ -8,6 +8,8 @@ Read-only diagnostic path for Common Lisp (SBCL), alongside OLIVE.
   *Status: complete — 43 tests. Covers symbols, numbers, strings with escapes, lists, `#(` vector literals (as `ListNode.prefix`), `'` quote (preserved as `QuoteNode`), line comments, nested block comments, half-open positions, `parse`/`parseAll` over a cursor factory. Verified against SBCL on disk fixtures.*
   *Deferred: `#\` char literals, backquote/unquote, `#'` function quote parse as single atoms (structurally safe, semantically resolved at M3). `#+`/`#-` read-time conditionals are out of scope.*
 - **M2 — Structural analyzer.** Diagnostics over the AST: unbalanced delimiters, stray closers, unterminated strings/comments, malformed `defun`/`let`/`lambda` shapes.
+  *Status: complete — 69 tests (51 reader, 18 analyze). `ReaderError` carries a stable code plus the position of the offending construct; `analyze` returns `Diagnostic[]` with learner-facing messages, recovers past each error via `reader.next()` so a bad form does not hide the rest of the file, and runs AST shape checks (`defun` name/arglist, `lambda` arglist, `let`/`let*` bindings) recursively while skipping quoted data and `#(...)` vectors.*
+  *Deferred: diagnostics carry one position, not a range (M6 converts); shape checks do not validate binding entries or arity.*
 - **M3 — Interpreter.** Evaluator over the AST: `defun`, `if`, `cond`, `let`, arithmetic, recursion.
 - **M4 — Value tracking.** Evaluate to a point, expose symbol values for inline display.
 - **M5 — Recursion trace.** Frame enter/exit recording, rendered as a call tree outside the REPL.

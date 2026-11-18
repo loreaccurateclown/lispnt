@@ -67,3 +67,72 @@ test("keeps recovering after a valid form", () => {
     [2, 3, 4, 5],
   );
 });
+
+//LLM-written tests
+test("reports a defun whose name is not a symbol", () => {
+  const diagnostics = analyze("(defun 1 (x) x)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.deepEqual(diagnostics[0], {
+    code: "defun-name",
+    severity: "error",
+    message: "A defun needs a name symbol here.",
+    position: { line: 1, column: 8, offset: 7 },
+  });
+});
+
+test("reports a defun without an argument list", () => {
+  const diagnostics = analyze("(defun foo x)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "defun-arglist");
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 12, offset: 11 });
+});
+
+test("reports a lambda without an argument list", () => {
+  const diagnostics = analyze("(lambda 1)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "lambda-arglist");
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 9, offset: 8 });
+});
+
+test("reports a let without a bindings list", () => {
+  const diagnostics = analyze("(let 1 2)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "let-bindings");
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 6, offset: 5 });
+});
+
+test("reports a let* without a bindings list", () => {
+  const diagnostics = analyze("(let* 1 2)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "let-bindings");
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 7, offset: 6 });
+});
+
+test("ignores a malformed form inside a quote", () => {
+  assert.deepEqual(analyze("'(defun 1 (x) x)"), []);
+});
+
+test("ignores a malformed form inside a vector literal", () => {
+  assert.deepEqual(analyze("#(defun 1 (x) x)"), []);
+});
+
+test("accepts a defun with no body", () => {
+  assert.deepEqual(analyze("(defun f ())"), []);
+});
+
+test("accepts a let with a bare symbol binding", () => {
+  assert.deepEqual(analyze("(let (x) x)"), []);
+});
+
+test("finds a malformed form nested inside a valid one", () => {
+  const diagnostics = analyze("(defun foo (x) (let 1 2))");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "let-bindings");
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 21, offset: 20 });
+});
