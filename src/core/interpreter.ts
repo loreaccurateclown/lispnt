@@ -6,6 +6,7 @@ import {
   Env,
   isTruthy,
   type LispValue,
+  FunctionValue,
 } from "./values";
 import type { AstNode, AtomNode, ListNode } from "./reader";
 
@@ -34,6 +35,41 @@ export function lookup(env: Env, name: string): LispValue | undefined {
   return undefined; //I guess if the lookup fails
 }
 
+export function applyFunction(fn: FunctionValue, args: LispValue[]): LispValue {
+  if (args.length !== fn.params.length) {
+    throw new Error(
+      `${fn.name} expects ${fn.params.length} argument(s), got ${args.length}`,
+    );
+  }
+
+  const scope = createEnv(fn.env);
+  for (let index = 0; index < fn.params.length; index += 1) {
+    define(scope, fn.params[index]!, args[index]!);
+  }
+  return evaluateBody(fn.body, scope);
+}
+
+function evalCall(form: ListNode, env: Env): LispValue {
+  const head = form.children[0];
+  if (head === undefined) return NIL;
+
+  const callable = evaluate(head, env);
+  if (callable.kind !== "function") throw new Error(`not a function: ${String(callable.kind)}`);
+
+  const args = form.children.slice(1).map((argument) => evaluate(argument, env)); // slice(1): drop the head symbol, keep the argument forms
+  return applyFunction(callable, args);
+}
+
+function designatedFunction(node: AstNode, env: Env): LispValue {
+  const name = symbolName(node);
+
+  if (name === undefined || !name.startsWith("#'")) throw new Error("not a function designator");
+  const target = lookup(env, name.slice(2)); // slice(2): strip the leading "#'" to get the bare function name
+  if (target === undefined  ) throw new Error(`undefined function: ${name.slice(2)}`); // slice(2): same strip, this time for the error text
+
+  return target;
+}
+
 export function evaluate(node: AstNode, env: Env): LispValue {
   if (node.kind === "quote") return astToValue(node.target);
   if (node.kind === "list") {
@@ -55,7 +91,7 @@ export function evaluate(node: AstNode, env: Env): LispValue {
       case "UNLESS":
         return evalUnless(node, env);
       case "PROGN":
-        return evaluateBody(node.children.slice(1), env);
+        return evaluateBody(node.children.slice(1), env); // slice(1): drop "progn", keep the body forms
       case "LET":
         return evalLet(node, env, false);
       case "LET*":
@@ -68,10 +104,13 @@ export function evaluate(node: AstNode, env: Env): LispValue {
       case "SETQ":
         return evalSetQ(node, env);
       default:
-        throw new Error(`not implemented yet: ${String(name)}`);
+        return evalCall(node, env);
     }
   }
   //node is AtomNode
+  const raw = String(node.value);
+  if (raw.startsWith("#'")) return designatedFunction(node, env);
+
   if (node.atomType === "number")
     return { kind: "number", value: Number(node.value) };
   if (node.atomType === "string")
@@ -110,7 +149,7 @@ function evalIf(form: ListNode, env: Env): LispValue {
 }
 
 function evalCond(form: ListNode, env: Env): LispValue {
-  for (const clauseNode of form.children.slice(1)) {
+  for (const clauseNode of form.children.slice(1)) { // slice(1): drop "cond", keep the clause forms
     if (clauseNode.kind !== "list")
       throw new Error("cond clause must be a list");
     const testNode = clauseNode.children[0];
@@ -120,7 +159,7 @@ function evalCond(form: ListNode, env: Env): LispValue {
       name === "T" || name === "OTHERWISE"
         ? true
         : isTruthy(evaluate(testNode, env));
-    if (matched) return evaluateBody(clauseNode.children.slice(1), env);
+    if (matched) return evaluateBody(clauseNode.children.slice(1), env); // slice(1): drop the clause's test, keep its body
   }
   return NIL;
 }
@@ -152,7 +191,7 @@ function evalLet(form: ListNode, env: Env, sequential: boolean): LispValue {
         : evaluate(valueNode, sequential ? scope : env);
     define(scope, name, value);
   }
-  return evaluateBody(form.children.slice(2), scope);
+  return evaluateBody(form.children.slice(2), scope); // slice(2): drop "let"/"let*" and the bindings list, keep the body
 }
 
 function evalDefun(form: ListNode, env: Env): LispValue {
@@ -180,7 +219,7 @@ function evalDefun(form: ListNode, env: Env): LispValue {
     kind: "function",
     name,
     params,
-    body: form.children.slice(3),
+    body: form.children.slice(3), // slice(3): drop "defun", the name and the parameter list, keep the body
     env,
   });
 
@@ -199,6 +238,21 @@ function evalDefParameter(form: ListNode, env: Env): LispValue {
   return intern(name);
 }
 
+function assign(env: Env, name: string, value: LispValue  ): boolean {
+  const key = name.toUpperCase();
+  let current: Env | null = env;
+
+  while (current !== null) {
+    if (current.vars.has(key)) {
+      current.vars.set(key, value);
+      return true;
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
+
 function evalSetQ(form: ListNode, env: Env): LispValue {
   let result: LispValue = NIL;
   let index = 1;
@@ -207,7 +261,7 @@ function evalSetQ(form: ListNode, env: Env): LispValue {
     if (name === undefined)
       throw new Error("evalDefParameter: name not defined");
     result = evaluate(form.children[index + 1]!, env); //! before in js, ! after in ts. #wow
-    define(env, name, result);
+    if (!assign(env, name, result)) define(env,name,result);
     index += 2;
   }
   return result;
@@ -215,7 +269,7 @@ function evalSetQ(form: ListNode, env: Env): LispValue {
 
 function evalAnd(form: ListNode, env: Env): LispValue {
   let result: LispValue = intern("T");
-  for (const operand of form.children.slice(1)) {
+  for (const operand of form.children.slice(1)) { // slice(1): drop "and", keep the operands
     result = evaluate(operand, env);
     if (!isTruthy(result)) return NIL;
   }
@@ -224,7 +278,7 @@ function evalAnd(form: ListNode, env: Env): LispValue {
 
 function evalOr(form: ListNode, env: Env): LispValue {
   let result: LispValue = NIL;
-  for (const operand of form.children.slice(1)) {
+  for (const operand of form.children.slice(1)) { // slice(1): drop "or", keep the operands
     result = evaluate(operand, env);
     if (isTruthy(result)) return result;
   }
@@ -235,14 +289,14 @@ function evalWhen(form: ListNode, env: Env): LispValue {
   const testNode = form.children[1];
   if (testNode === undefined) throw new Error("when needs a test");
   if (!isTruthy(evaluate(testNode, env))) return NIL;
-  return evaluateBody(form.children.slice(2), env);
+  return evaluateBody(form.children.slice(2), env); // slice(2): drop "when" and the test, keep the body
 }
 
 function evalUnless(form: ListNode, env: Env): LispValue {
   const testNode = form.children[1];
   if (testNode === undefined) throw new Error("unless needs a test");
   if (isTruthy(evaluate(testNode, env))) return NIL;
-  return evaluateBody(form.children.slice(2), env);
+  return evaluateBody(form.children.slice(2), env); // slice(2): drop "unless" and the test, keep the body
 }
 
 export function astToValue(node: AstNode): LispValue {

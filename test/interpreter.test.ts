@@ -234,3 +234,56 @@ test("binds a function value for defun", () => {
 test("rejects a defun whose argument list is not a list", () => {
   assert.throws(() => run("(defun f 1)"));
 });
+
+//LLM-written tests
+test("applies a user-defined function to its argument", () => {
+  assert.deepEqual(run("(progn (defun f (x) x) (f 42))"), num(42));
+});
+
+test("passes several arguments in order", () => {
+  assert.deepEqual(run("(progn (defun second (a b) b) (second 1 2))"), num(2));
+});
+
+test("rejects a call with too few arguments", () => {
+  assert.throws(() => run("(progn (defun f (x) x) (f))"));
+});
+
+test("rejects a call with too many arguments", () => {
+  assert.throws(() => run("(progn (defun f (x) x) (f 1 2))"));
+});
+
+test("lets a body read a binding from its defining environment", () => {
+  assert.deepEqual(run("(let ((x 5)) (progn (defun get () x) (get)))"), num(5));
+});
+
+test("supports a self-recursive function with a base case", () => {
+  assert.deepEqual(run("(progn (defun stop (x) (if x 1 (stop t))) (stop nil))"), num(1));
+});
+
+test("lets a call assign a binding captured from its defining environment", () => {
+  assert.deepEqual(
+    run("(let ((x 1)) (progn (defun bump (v) (progn (setq x v) v)) (bump 2) x))"),
+    num(2),
+  );
+});
+
+test("resolves a #' designator to the function value", () => {
+  const value = run("(progn (defun f (x) x) #'f)");
+
+  assert.equal(value.kind, "function");
+  if (value.kind !== "function") return;
+
+  assert.equal(value.name, "F");
+});
+
+test("rejects calling a value that is not a function", () => {
+  assert.throws(() => run("(let ((x 5)) (x 1))"));
+});
+
+test("evaluates the empty list to NIL", () => {
+  assert.ok(isNil(run("()")));
+});
+
+test("evaluates a nested call", () => {
+  assert.deepEqual(run("(progn (defun f (x) x) (f (f 3)))"), num(3));
+});
