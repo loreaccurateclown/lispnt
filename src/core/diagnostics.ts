@@ -13,7 +13,7 @@ export type DiagnosticCode = ReaderErrorCode | ShapeCode;
 
 export interface Diagnostic {
   //ideally this naming won't collide with vscode.Diagnostic
-  readonly code: DiagnosticCode; 
+  readonly code: DiagnosticCode;
   readonly severity: DiagnosticSeverity;
   readonly message: string;
   readonly position: Position; //one position for now, will be converted into range later
@@ -49,6 +49,10 @@ function userMessageSwitcher(errorMessage: ReaderErrorCode): string {
       return "Unexpected end of file.";
     case "trailing-content":
       return "Unexpected extra form.";
+    case "dotted-tail-extra-form": //In retrospect any Lisp learners' course teaching dotted pairs is probably doing something terribly wrong. Still tho
+      return "This dotted pair has too many forms after the dot. It is a cons cell and can only hold two forms.";
+    case "dotted-tail-without-head":
+      return "This dotted pair is missing its first element. It is a cons cell and requires a car and cdr.";
   }
 }
 

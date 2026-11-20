@@ -18,4 +18,6 @@ export type ReaderErrorCode =
   | "unexpected-eof" //readNode: EOF where a form was expected
   | "unterminated-list" //readList: EOF before ')'
   | "unterminated-string" //readString: EOF before closing quote
-  | "unterminated-block-comment"; //skipTrivia: EOF before '|#'
+  | "unterminated-block-comment" //skipTrivia: EOF before '|#'
+  | "dotted-tail-without-head" //dotted pairs: ( . 2) (missing first element of pair)
+  | "dotted-tail-extra-form"; //dotted pairs: (1 . 2 3) or (1 . 2 . 3), since it's a pair it can't have more than two forms

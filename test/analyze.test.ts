@@ -136,3 +136,20 @@ test("finds a malformed form nested inside a valid one", () => {
   assert.equal(diagnostics[0]?.code, "let-bindings");
   assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 21, offset: 20 });
 });
+
+//LLM-written tests
+test("recognises an uppercase form head", () => {
+  const diagnostics = analyze("(DEFUN 1 (x) x)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "defun-name");
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 8, offset: 7 });
+});
+
+test("walks the tail of a dotted form once", () => {
+  const diagnostics = analyze("(defun foo (x) . (lambda 1))");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "lambda-arglist");
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 26, offset: 25 });
+});

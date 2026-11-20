@@ -704,3 +704,131 @@ test("ReaderError carries its fields and is an Error", () => {
   assert.equal(error.message, "stray closer");
   assert.deepEqual(error.position, { line: 2, column: 5, offset: 7 });
 });
+
+//LLM-written tests
+test("parses a dotted pair into a tail", () => {
+  assert.deepEqual(parse("(a . b)"), {
+    kind: "list",
+    children: [
+      {
+        kind: "atom",
+        atomType: "symbol",
+        value: "a",
+        start: { line: 1, column: 2, offset: 1 },
+      },
+    ],
+    start: { line: 1, column: 1, offset: 0 },
+    end: { line: 1, column: 8, offset: 7 },
+    tail: {
+      kind: "atom",
+      atomType: "symbol",
+      value: "b",
+      start: { line: 1, column: 6, offset: 5 },
+    },
+  });
+});
+
+test("parses a dotted pair with several leading elements", () => {
+  assert.deepEqual(parse("(a b . c)"), {
+    kind: "list",
+    children: [
+      {
+        kind: "atom",
+        atomType: "symbol",
+        value: "a",
+        start: { line: 1, column: 2, offset: 1 },
+      },
+      {
+        kind: "atom",
+        atomType: "symbol",
+        value: "b",
+        start: { line: 1, column: 4, offset: 3 },
+      },
+    ],
+    start: { line: 1, column: 1, offset: 0 },
+    end: { line: 1, column: 10, offset: 9 },
+    tail: {
+      kind: "atom",
+      atomType: "symbol",
+      value: "c",
+      start: { line: 1, column: 8, offset: 7 },
+    },
+  });
+});
+
+test("parses a dotted pair whose tail is a list", () => {
+  assert.deepEqual(parse("(a . (b c))"), {
+    kind: "list",
+    children: [
+      {
+        kind: "atom",
+        atomType: "symbol",
+        value: "a",
+        start: { line: 1, column: 2, offset: 1 },
+      },
+    ],
+    start: { line: 1, column: 1, offset: 0 },
+    end: { line: 1, column: 12, offset: 11 },
+    tail: {
+      kind: "list",
+      children: [
+        {
+          kind: "atom",
+          atomType: "symbol",
+          value: "b",
+          start: { line: 1, column: 7, offset: 6 },
+        },
+        {
+          kind: "atom",
+          atomType: "symbol",
+          value: "c",
+          start: { line: 1, column: 9, offset: 8 },
+        },
+      ],
+      start: { line: 1, column: 6, offset: 5 },
+      end: { line: 1, column: 11, offset: 10 },
+    },
+  });
+});
+
+test("rejects a dot with nothing before it", () => {
+  const error = expectReaderError("(. a)");
+
+  assert.equal(error.code, "dotted-tail-without-head");
+  assert.deepEqual(error.position, { line: 1, column: 2, offset: 1 });
+});
+
+test("rejects more than one form after the dot", () => {
+  const error = expectReaderError("(a . b c)");
+
+  assert.equal(error.code, "dotted-tail-extra-form");
+  assert.deepEqual(error.position, { line: 1, column: 8, offset: 7 });
+});
+
+test("treats a dot inside a symbol as part of the atom", () => {
+  assert.deepEqual(parse("(a.b)"), {
+    kind: "list",
+    children: [
+      {
+        kind: "atom",
+        atomType: "symbol",
+        value: "a.b",
+        start: { line: 1, column: 2, offset: 1 },
+      },
+    ],
+    start: { line: 1, column: 1, offset: 0 },
+    end: { line: 1, column: 6, offset: 5 },
+  });
+});
+
+test("sets tail only for dotted lists", () => {
+  const dotted = parse("(a . b)");
+  const plain = parse("(a b)");
+
+  if (dotted.kind !== "list" || plain.kind !== "list") {
+    assert.fail("expected both inputs to parse as lists");
+  }
+
+  assert.notEqual(dotted.tail, undefined);
+  assert.equal(plain.tail, undefined);
+});

@@ -17,24 +17,25 @@ function walk(node: AstNode, diagnostics: Diagnostic[]): void {
 
   checkFormSingle(node, diagnostics); //the recurser!!!!!!! also fish named this "checkForm" so I added an extra word to distinguish it
 
-  for (const child of node.children) {
-    walk(child, diagnostics);
-  }
+  for (const child of node.children) walk(child, diagnostics); //JS has inline for loops... woah
+
+  if (node.tail !== undefined) walk(node.tail, diagnostics);
 }
 
 function checkFormSingle(list: ListNode, diagnostics: Diagnostic[]): void {
   const first = list.children[0];
-  const head = first === undefined ? undefined : symbolText(first); //if not undefined head returns the symboltext in our first index
+  const head =
+    first === undefined ? undefined : symbolText(first)?.toUpperCase(); //if not undefined head returns the symboltext in our first index
 
   switch (head) {
-    case "defun":
+    case "DEFUN":
       checkDefun(list, diagnostics);
       return;
-    case "lambda":
+    case "LAMBDA":
       checkLambda(list, diagnostics);
       return;
-    case "let":
-    case "let*":
+    case "LET":
+    case "LET*":
       checkLet(list, diagnostics);
       return;
     default:

@@ -20,6 +20,7 @@ export interface ListNode {
   readonly children: AstNode[];
   readonly start: Position;
   readonly end: Position;
+  readonly tail?: AstNode;
 }
 
 export interface QuoteNode {
@@ -223,6 +224,39 @@ export function createReader(source: string): Reader {
 
     let ch = peek();
     while (ch !== undefined && ch !== ")") {
+      const next = peekAt(1);
+      const isDot =
+        peek() === "." && (next === undefined || atomDelimiters.includes(next));
+
+      if (isDot) {
+        if (children.length === 0) {
+          throw new ReaderError(
+            "dotted-tail-without-head",
+            here(),
+            "dotted pair missing first element",
+          );
+        }
+        advance(); //past the "."
+        skipTrivia();
+        const tail = readNode();
+        skipTrivia(); //maybe it would have been better to do an optional bool passed to any reader function in case we don't want to skip trivia but that seems a bit hard to intuit
+
+        if (peek() !== ")") {
+          throw new ReaderError(
+            "dotted-tail-extra-form",
+            here(),
+            "dotted PAIR has more than one form after the dot.",
+          ); //maybe a little obnoxious for the error message but brevity is important when delivering bad news
+        }
+
+        advance();
+        const end = here();
+        if (prefix === undefined)
+          return { kind: "list", children, start, end, tail };
+        //otherwise:
+        return { kind: "list", prefix, children, start, end, tail }; //apparently it's not possible to do e.g. #(1 . 2) since they're different types so this is unreachable and exists only for TS's type checker.
+      }
+
       children.push(readNode()); //feels very elegant. Well, if I wrote it myself anyway.
       skipTrivia(); //it feels inefficient to manually call skipTrivia after calling readNode which has it anyway,
       // but it's probably more dangerous trying to automate it/move it to the called funcs
@@ -241,6 +275,7 @@ export function createReader(source: string): Reader {
         end,
       };
     }
+
     return {
       kind: "list",
       prefix,
@@ -322,9 +357,10 @@ export function createReader(source: string): Reader {
 
   function parseAll(): AstNode[] {
     const nodes: AstNode[] = [];
-    while (true) { //it's over...
+    while (true) {
+      //it's over...
       const result = next();
-      switch(result.kind) {
+      switch (result.kind) {
         case "end":
           return nodes;
         case "error":

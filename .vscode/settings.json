@@ -1,3 +1,8 @@
 {
-    "js/ts.tsdk.path": "node_modules\\typescript"
+  "js/ts.tsdk.path": "node_modules\\typescript",
+  "typescript.preferences.autoImportSpecifierExcludeRegexes": [
+    "^node:",
+    "^(crypto|zlib|util|test|child_process|fs|path)$"
+  ],
+  "typescript.preferences.includePackageJsonAutoImports": "off"
 }
