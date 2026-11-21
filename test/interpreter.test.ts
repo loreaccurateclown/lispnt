@@ -287,3 +287,107 @@ test("evaluates the empty list to NIL", () => {
 test("evaluates a nested call", () => {
   assert.deepEqual(run("(progn (defun f (x) x) (f (f 3)))"), num(3));
 });
+
+//LLM-written tests
+test("adds numbers with +", () => {
+  assert.deepEqual(run("(+ 1 2)"), num(3));
+  assert.deepEqual(run("(+)"), num(0));
+});
+
+test("subtracts numbers with -", () => {
+  assert.deepEqual(run("(- 5)"), num(-5));
+  assert.deepEqual(run("(- 5 2)"), num(3));
+});
+
+test("multiplies numbers with *", () => {
+  assert.deepEqual(run("(* 2 3 4)"), num(24));
+});
+
+test("divides numbers and rejects division by zero", () => {
+  assert.deepEqual(run("(/ 10 2)"), num(5));
+  assert.throws(() => run("(/ 1 0)"));
+});
+
+test("compares numbers with =", () => {
+  assert.equal(run("(= 1 1)"), intern("T"));
+  assert.ok(isNil(run("(= 1 2)")));
+});
+
+test("compares a chain with <", () => {
+  assert.equal(run("(< 1 2 3)"), intern("T"));
+  assert.ok(isNil(run("(< 1 3 2)")));
+});
+
+test("compares symbols with eq", () => {
+  assert.equal(run("(eq 'a 'a)"), intern("T"));
+  assert.ok(isNil(run("(eq 'a 'b)")));
+});
+
+test("distinguishes equal from eq on lists", () => {
+  assert.equal(run("(equal '(1 2) '(1 2))"), intern("T"));
+  assert.ok(isNil(run("(eq '(1 2) '(1 2))")));
+});
+
+test("takes the head and tail of a list", () => {
+  assert.deepEqual(run("(car '(1 2))"), num(1));
+  assert.deepEqual(run("(cdr '(1 2))"), cons(num(2), NIL));
+});
+
+test("builds pairs and lists", () => {
+  assert.deepEqual(run("(cons 1 2)"), cons(num(1), num(2)));
+  assert.deepEqual(
+    run("(list 1 2 3)"),
+    cons(num(1), cons(num(2), cons(num(3), NIL))),
+  );
+});
+
+test("measures list length", () => {
+  assert.deepEqual(run("(length '(1 2 3))"), num(3));
+  assert.deepEqual(run("(length '())"), num(0));
+});
+
+test("appends lists and returns NIL with no arguments", () => {
+  assert.deepEqual(
+    run("(append '(1 2) '(3 4))"),
+    cons(num(1), cons(num(2), cons(num(3), cons(num(4), NIL)))),
+  );
+  assert.ok(isNil(run("(append)")));
+});
+
+test("tests null and atom", () => {
+  assert.equal(run("(null nil)"), intern("T"));
+  assert.equal(run("(atom 1)"), intern("T"));
+  assert.ok(isNil(run("(atom '(1))")));
+});
+
+test("treats zero as truthy for not", () => {
+  assert.equal(run("(not nil)"), intern("T"));
+  assert.ok(isNil(run("(not 0)")));
+});
+
+test("has numeric predicates", () => {
+  assert.equal(run("(evenp 4)"), intern("T"));
+  assert.equal(run("(zerop 0)"), intern("T"));
+  assert.ok(isNil(run("(numberp 'a)")));
+});
+
+test("calls a designator with funcall", () => {
+  assert.deepEqual(run("(funcall #'car '(1 2))"), num(1));
+});
+
+test("spreads a list with apply", () => {
+  assert.deepEqual(run("(apply #'+ '(1 2 3))"), num(6));
+});
+
+test("rejects type errors inside builtins", () => {
+  assert.throws(() => run("(car 5)"));
+  assert.throws(() => run('(+ 1 "a")'));
+});
+
+test("lets a user function call builtins", () => {
+  assert.deepEqual(run("(progn (defun sq (x) (* x x)) (sq 4))"), num(16));
+});
+
+test("lets a user defun shadow a builtin name", () => {
+  assert.deepEqual(run("(progn (defun length (x) 99) (length '(1)))"), num(99));
+});

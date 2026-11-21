@@ -1,10 +1,10 @@
 import { AstNode } from "./reader";
 
-type SymbolValue = { kind: "symbol"; name: string };
-type NumberValue = { kind: "number"; value: number };
-type StringValue = { kind: "string"; value: string };
-type NilValue = { kind: "nil" };
-type ConsValue = { kind: "cons"; car: LispValue; cdr: LispValue };
+export type SymbolValue = { kind: "symbol"; name: string };
+export type NumberValue = { kind: "number"; value: number };
+export type StringValue = { kind: "string"; value: string };
+export type NilValue = { kind: "nil" };
+export type ConsValue = { kind: "cons"; car: LispValue; cdr: LispValue };
 
 export interface Env {
   vars: Map<string, LispValue>;
@@ -20,7 +20,8 @@ export type LispValue =
   | NilValue
   | ConsValue
   | ArrayValue
-  | FunctionValue;
+  | FunctionValue
+  | BuiltInValue;
 
 export type FunctionValue = {
   kind: "function";
@@ -28,6 +29,15 @@ export type FunctionValue = {
   params: string[];
   body: AstNode[];
   env: Env;
+};
+
+export type BuiltInValue = {
+  //apparently this kind of table lets us avoid switch casing in the function
+  kind: "builtin";
+  name: string;
+  min: number;
+  max: number | null;
+  fn: (args: LispValue[]) => LispValue;
 };
 
 export const NIL: NilValue = { kind: "nil" };
