@@ -11,8 +11,13 @@ export interface Env {
   parent: Env | null;
 }
 
+export interface Place {
+  get(): LispValue;
+  set(value: LispValue): void;
+}
+
 //mutable
-type ArrayValue = { kind: "array"; elements: LispValue[] };
+export type ArrayValue = { kind: "array"; elements: LispValue[] };
 export type LispValue =
   | SymbolValue
   | NumberValue

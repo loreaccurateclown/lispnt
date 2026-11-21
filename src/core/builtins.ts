@@ -1,4 +1,5 @@
 import {
+  ArrayValue,
   BuiltInValue,
   cons,
   ConsValue,
@@ -19,15 +20,28 @@ export function applyBuiltIn(fn: BuiltInValue, args: LispValue[]) {
   return fn.fn(args);
 }
 
-function expectNumber(value: LispValue): number {
+export function expectNumber(value: LispValue): number {
   if (value.kind !== "number")
     throw new Error(`expected a number, got ${value.kind}`);
   return value.value; //2 for 1 deal. great value
 }
 
-function expectCons(value: LispValue): ConsValue {
+export function expectCons(value: LispValue): ConsValue {
   if (value.kind !== "cons")
     throw new Error(`expected a list, got ${value.kind}`);
+  return value;
+}
+
+export function expectInteger(value: LispValue): number {
+  const number = expectNumber(value);
+  if (!Number.isInteger) throw new Error(`expected an integer, got ${number}`);
+  return number;
+}
+
+export function expectArray(value: LispValue): ArrayValue {
+  if (value.kind !== "array") {
+    throw new Error(`expected an array, got ${value.kind}`);
+  }
   return value;
 }
 
@@ -100,6 +114,7 @@ export function register(
 }
 
 //apparently you can just set these without a function container? they're saved to a table somewhere? I don't know
+//2 hours later: I remembered what RAM is. The table sits in RAM. computeing
 register("+", 0, null, (args) => ({
   kind: "number",
   value: args.reduce((total, arg) => total + expectNumber(arg), 0),
@@ -120,10 +135,15 @@ register("CAR", 1, 1, (args) => expectCons(args[0]!).car);
 register("CDR", 1, 1, (args) => expectCons(args[0]!).cdr);
 register("CONS", 2, 2, (args) => cons(args[0]!, args[1]!));
 register("LIST", 0, null, (args) => listFrom(args));
-register("LENGTH", 1, 1, (args) => ({
-  kind: "number",
-  value: consForm(args[0]!).length,
-}));
+register("LENGTH", 1, 1, (args) => {
+  const value = args[0]!;
+  const size =
+    value.kind === "array" ? value.elements.length : consForm(value).length;
+  return {
+    kind: "number",
+    value: size,
+  };
+});
 register("NOT", 1, 1, (args) => (isNil(args[0]!) ? intern("T") : NIL));
 register("EQ", 2, 2, (args) => (isEq(args[0]!, args[1]!) ? intern("T") : NIL));
 register("EQUAL", 2, 2, (args) =>
@@ -163,6 +183,39 @@ register("ASSOC", 2, 2, (args) => {
     if (entry.kind === "cons" && isEqual(entry.car, key)) return entry;
   }
   return NIL;
+});
+
+register("VECTOR", 0, null, (args) => {
+  const size = expectInteger(args[0]!);
+  const initial = args[2] === undefined ? NIL : args[2];
+  return {
+    kind: "array",
+    elements: args,
+  };
+});
+
+register("MAKE-ARRAY", 1, null, (args) => {
+  const size = expectInteger(args[0]!);
+  const initial = args[2] === undefined ? NIL : args[2]; //:initial-element value
+  return {
+    kind: "array",
+    elements: Array.from({ length: size }, () => initial),
+  };
+});
+
+register("AREF", 2, 2, (args) => {
+  const array = expectArray(args[0]!);
+  const at = expectInteger(args[1]!);
+  if (at < 0 || at >= array.elements.length)
+    throw new Error(`AREF: index ${at} out of range`);
+  return array.elements[at] ?? NIL;
+});
+
+register("ELT", 2, 2, (args) => {
+  const at = expectInteger(args[1]!);
+  const sequence = args[0]!;
+  if (sequence.kind === "array") return sequence.elements[at] ?? NIL;
+  return consForm(sequence)[at] ?? NIL;
 });
 
 register("=", 1, null, (args) => compareChain(args, (a, b) => a === b));

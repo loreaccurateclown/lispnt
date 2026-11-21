@@ -391,3 +391,95 @@ test("lets a user function call builtins", () => {
 test("lets a user defun shadow a builtin name", () => {
   assert.deepEqual(run("(progn (defun length (x) 99) (length '(1)))"), num(99));
 });
+
+//LLM-written tests
+test("makes an array of a given size filled with NIL", () => {
+  assert.deepEqual(run("(make-array 3)"), {
+    kind: "array",
+    elements: [NIL, NIL, NIL],
+  });
+});
+
+test("makes an array with an initial element", () => {
+  assert.deepEqual(run("(make-array 3 :initial-element 0)"), {
+    kind: "array",
+    elements: [num(0), num(0), num(0)],
+  });
+});
+
+test("builds an array with vector", () => {
+  assert.deepEqual(run("(vector 1 2 3)"), {
+    kind: "array",
+    elements: [num(1), num(2), num(3)],
+  });
+});
+
+test("reads an array element with aref", () => {
+  assert.deepEqual(run("(aref (vector 1 2 3) 1)"), num(2));
+});
+
+test("rejects an out of range aref index", () => {
+  assert.throws(() => run("(aref (vector 1) 5)"));
+});
+
+test("reads a list element with elt", () => {
+  assert.equal(run("(elt '(a b) 1)"), intern("B"));
+});
+
+test("measures array length", () => {
+  assert.deepEqual(run("(length (vector 1 2 3))"), num(3));
+});
+
+test("writes an array element through an aref place", () => {
+  assert.deepEqual(
+    run("(let ((a (make-array 2))) (progn (setf (aref a 0) 5) (aref a 0)))"),
+    num(5),
+  );
+});
+
+test("leaves other array elements untouched by setf", () => {
+  assert.deepEqual(run("(let ((a (vector 1 2))) (progn (setf (aref a 1) 9) a))"), {
+    kind: "array",
+    elements: [num(1), num(9)],
+  });
+});
+
+test("assigns a variable through setf", () => {
+  assert.deepEqual(run("(let ((x 1)) (progn (setf x 2) x))"), num(2));
+});
+
+test("assigns the car of a cons through setf", () => {
+  assert.deepEqual(
+    run("(let ((l (list 1 2))) (progn (setf (car l) 9) l))"),
+    cons(num(9), cons(num(2), NIL)),
+  );
+});
+
+test("assigns the cdr of a cons through setf", () => {
+  assert.deepEqual(
+    run("(let ((l (list 1 2))) (progn (setf (cdr l) nil) l))"),
+    cons(num(1), NIL),
+  );
+});
+
+test("assigns several places in one setf", () => {
+  assert.deepEqual(
+    run("(let ((x 1) (y 2)) (progn (setf x 10 y 20) (+ x y)))"),
+    num(30),
+  );
+});
+
+test("increments a variable with incf", () => {
+  assert.deepEqual(run("(let ((x 1)) (progn (incf x) x))"), num(2));
+});
+
+test("increments an array element through a place", () => {
+  assert.deepEqual(
+    run("(let ((a (vector 1 2))) (progn (incf (aref a 0) 10) (aref a 0)))"),
+    num(11),
+  );
+});
+
+test("rejects setf on something that is not a place", () => {
+  assert.throws(() => run("(setf (unknown-place) 1)"));
+});

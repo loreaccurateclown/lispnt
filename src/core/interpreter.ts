@@ -7,9 +7,17 @@ import {
   isTruthy,
   type LispValue,
   FunctionValue,
+  Place,
+  ConsValue,
 } from "./values";
 import type { AstNode, AtomNode, ListNode } from "./reader";
-import { applyBuiltIn, builtins, consForm, register } from "./builtins";
+import {
+  applyBuiltIn,
+  builtins,
+  consForm,
+  expectNumber,
+  register,
+} from "./builtins";
 
 export function createEnv(parent: Env | null): Env {
   const env = { vars: new Map(), parent };
@@ -37,6 +45,78 @@ export function lookup(env: Env, name: string): LispValue | undefined {
     current = current.parent;
   }
   return undefined; //I guess if the lookup fails
+}
+
+export function resolvePlace(node: AstNode, env: Env): Place {
+  if (node.kind === "atom" && node.atomType === "symbol") {
+    const name = symbolName(node)!;
+    return {
+      get: () => lookup(env, name) ?? NIL,
+      set: (value) => {
+        if (!assign(env, name, value)) define(env, name, value);
+      },
+    };
+  }
+
+  if (node.kind !== "list") throw new Error("not a place");
+
+  const head = node.children[0];
+  const name = head === undefined ? undefined : symbolName(head);
+
+  switch (name) {
+    case "CAR": {
+      const cell = expectConsPlace(node, env);
+      return {
+        get: () => cell.cdr,
+        set: (value) => {
+          cell.car = value;
+        },
+      };
+    }
+    case "CDR": {
+      const cell = expectConsPlace(node, env);
+      return { get: () => cell.cdr, set: (value) => (cell.cdr = value) };
+    }
+    case "AREF":
+    case "ELT": {
+      const index = arrayAndIndex(node, env); // {elements, at}
+      return {
+        get: () => index.elements[index.at] ?? NIL,
+        set: (value) => {
+          index.elements[index.at] = value;
+        },
+      };
+    }
+    default:
+      throw new Error(`not a place: ${String(name)}`);
+  }
+}
+
+function evalSetf(form: ListNode, env: Env): LispValue {
+  let result: LispValue = NIL;
+  let index = 1;
+  while (index + 1 < form.children.length) {
+    const place = resolvePlace(form.children[index]!, env);
+    result = evaluate(form.children[index + 1]!, env);
+    place.set(result);
+    index += 2; //since we look at two positions
+  }
+  return result;
+}
+
+function evalIncDecf(form: ListNode, env: Env, sign: number): LispValue {
+  //sign is either 1 or -1 and multiplies amount to inc or dec
+  const place = resolvePlace(form.children[1]!, env);
+  const amount =
+    form.children[2] === undefined
+      ? 1
+      : expectNumber(evaluate(form.children[2]!, env));
+  const next: LispValue = {
+    kind: "number",
+    value: expectNumber(place.get()) + amount * sign,
+  };
+  place.set(next);
+  return next;
 }
 
 export function applyFunction(fn: FunctionValue, args: LispValue[]): LispValue {
@@ -68,6 +148,44 @@ register("APPLY", 2, null, (args) => {
   return callValue(callable, args.slice(1, -1).concat(tail));
 });
 
+//helper for resolve place along with arrayAndIndex
+function expectConsPlace(form: ListNode, env: Env): ConsValue {
+  const target = form.children[1];
+  if (target === undefined) throw new Error("CAR/CDR place needs one argument");
+
+  const value = evaluate(target, env);
+  if (value.kind !== "cons")
+    throw new Error(`expected a cons, got ${value.kind}`);
+
+  return value;
+}
+
+function arrayAndIndex(
+  form: ListNode,
+  env: Env,
+): { elements: LispValue[]; at: number } {
+  const sequenceNode = form.children[1];
+  const indexNode = form.children[2];
+  if (sequenceNode === undefined || indexNode === undefined) {
+    throw new Error(
+      `${symbolName(form.children[0]!)} place needs a sequence and an index`,
+    );
+  }
+
+  const sequence = evaluate(sequenceNode, env);
+  if (sequence.kind !== "array")
+    throw new Error(`expected an array, got ${sequence.kind}`);
+
+  const indexValue = evaluate(indexNode, env);
+  if (indexValue.kind !== "number" || !Number.isInteger(indexValue.value))
+    throw new Error("index must be an integer");
+
+  const at = indexValue.value;
+  if (at < 0 || at >= sequence.elements.length)
+    throw new Error(`index ${at} out of range`);
+
+  return { elements: sequence.elements, at };
+}
 function evalCall(form: ListNode, env: Env): LispValue {
   const head = form.children[0];
   if (head === undefined) return NIL;
@@ -128,6 +246,12 @@ export function evaluate(node: AstNode, env: Env): LispValue {
       }
       case "PROGN":
         return evaluateBody(node.children.slice(1), env); // slice(1): drop "progn", keep the body forms
+      case "SETF":
+        return evalSetf(node, env);
+      case "INCF":
+        return evalIncDecf(node, env, 1);
+      case "DECF":
+        return evalIncDecf(node, env, -1);
       case "LET":
         return evalLet(node, env, false);
       case "LET*":
@@ -146,6 +270,7 @@ export function evaluate(node: AstNode, env: Env): LispValue {
   //node is AtomNode
   const raw = String(node.value);
   if (raw.startsWith("#'")) return designatedFunction(node, env);
+  if (raw.startsWith(":")) return intern(raw);
 
   if (node.atomType === "number")
     return { kind: "number", value: Number(node.value) };
