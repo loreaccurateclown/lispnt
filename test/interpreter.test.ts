@@ -483,3 +483,74 @@ test("increments an array element through a place", () => {
 test("rejects setf on something that is not a place", () => {
   assert.throws(() => run("(setf (unknown-place) 1)"));
 });
+
+//LLM-written tests
+test("iterates a list with dolist", () => {
+  assert.deepEqual(
+    run("(let ((acc 0)) (progn (dolist (x '(1 2 3)) (setf acc (+ acc x))) acc))"),
+    num(6),
+  );
+});
+
+test("returns the dolist result form", () => {
+  assert.equal(run("(dolist (x '(1 2) 'done))"), intern("DONE"));
+});
+
+test("returns NIL from a dolist over an empty list", () => {
+  assert.ok(isNil(run("(dolist (x '()))")));
+});
+
+test("counts with dotimes", () => {
+  assert.deepEqual(
+    run("(let ((n 0)) (progn (dotimes (i 5) (setf n (+ n i))) n))"),
+    num(10),
+  );
+});
+
+test("binds the dotimes variable to the count in the result form", () => {
+  assert.deepEqual(run("(dotimes (i 3 i))"), num(3));
+});
+
+test("leaves a dotimes loop early with return", () => {
+  assert.deepEqual(run("(dotimes (i 10) (if (= i 3) (return i)))"), num(3));
+});
+
+test("leaves a dolist loop early with return", () => {
+  assert.deepEqual(
+    run("(dolist (x '(1 2 3) 'end) (if (= x 2) (return x)))"),
+    num(2),
+  );
+});
+
+test("pushes onto a list place", () => {
+  assert.deepEqual(
+    run("(let ((l nil)) (progn (push 1 l) (push 2 l) l))"),
+    cons(num(2), cons(num(1), NIL)),
+  );
+});
+
+test("rejects push with more than an item and a place", () => {
+  assert.throws(() => run("(push 1 2 l)"));
+});
+
+test("pops the first element and returns it", () => {
+  assert.deepEqual(run("(let ((l '(1 2))) (pop l))"), num(1));
+});
+
+test("pops the first element off the place", () => {
+  assert.deepEqual(
+    run("(let ((l '(1 2))) (progn (pop l) l))"),
+    cons(num(2), NIL),
+  );
+});
+
+test("pushes into an array element place", () => {
+  assert.deepEqual(
+    run("(let ((a (make-array 1))) (progn (push 5 (aref a 0)) (aref a 0)))"),
+    cons(num(5), NIL),
+  );
+});
+
+test("rejects pop on something that is not a place", () => {
+  assert.throws(() => run("(pop 5)"));
+});

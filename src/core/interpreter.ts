@@ -19,6 +19,10 @@ import {
   register,
 } from "./builtins";
 
+class ReturnSignal {
+  constructor(readonly value: LispValue) {}
+}
+
 export function createEnv(parent: Env | null): Env {
   const env = { vars: new Map(), parent };
   if (parent === null) {
@@ -102,6 +106,98 @@ function evalSetf(form: ListNode, env: Env): LispValue {
     index += 2; //since we look at two positions
   }
   return result;
+}
+
+function evalReturn(form: ListNode, env: Env): LispValue {
+  const valueNode = form.children[1];
+  throw new ReturnSignal(
+    valueNode === undefined ? NIL : evaluate(valueNode, env),
+  );
+}
+
+function evalDolist(form: ListNode, env: Env): LispValue {
+  const spec = form.children[1];
+  if (spec === undefined || spec.kind !== "list")
+    throw new Error(
+      "dolist needs to be in the form (var list result), var = item in list (iterates), the list you iterate and an optional result returned when the loop finishes.",
+    );
+
+  const variable = spec.children[0];
+  const varListNode = spec.children[1]; //different name purely so that my editor suggestions don't mess up
+  const resultNode = spec.children[2];
+
+  const name = variable === undefined ? undefined : symbolName(variable);
+
+  if (name === undefined || varListNode == undefined)
+    throw new Error(
+      "dolist needs an iterating variable and a list to iterate through",
+    );
+
+  const items = consForm(evaluate(varListNode, env));
+  const result = resultNode === undefined ? undefined : resultNode;
+
+  try {
+    for (const item of items) {
+      const scope = createEnv(env);
+      define(scope, name, item);
+      evaluateBody(form.children.slice(2), scope);
+    }
+  } catch (error) {
+    if (error instanceof ReturnSignal) return error.value;
+    throw error;
+  }
+
+  return resultNode === undefined ? NIL : evaluate(resultNode, env);
+}
+
+function evalDotimes(form: ListNode, env: Env): LispValue {
+  const spec = form.children[1];
+  if (spec === undefined || spec.kind !== "list") throw new Error("dotimes needs (var count [result])");
+
+  const variable = spec.children[0];
+  const countNode = spec.children[1];
+  const resultNode = spec.children[2];
+  const name = variable === undefined ? undefined : symbolName(variable);
+  if (name === undefined || countNode === undefined) throw new Error("dotimes needs a variable and a count");
+
+  const count = expectNumber(evaluate(countNode, env));
+
+  try {
+    for (let index = 0; index < count; index += 1) {
+      const scope = createEnv(env);
+      define(scope, name, { kind: "number", value: index });
+      evaluateBody(form.children.slice(2), scope);
+    }
+  } catch (error) {
+    if (error instanceof ReturnSignal) return error.value;
+    throw error;
+  }
+
+  // CL leaves the variable bound to COUNT after the loop, outside the body
+  const scope = createEnv(env);
+  define(scope, name, { kind: "number", value: count });
+  return resultNode === undefined ? NIL : evaluate(resultNode, scope);
+}
+
+function evalPush(form: ListNode, env: Env): LispValue {
+  // CL's push is binary: (push item place). Extra arguments are a caller error,
+  // not a multi-push.
+  if (form.children.length !== 3) {
+    throw new Error("push takes an item and a place");
+  }
+
+  const place = resolvePlace(form.children[2]!, env);
+  const next = cons(evaluate(form.children[1]!, env), place.get());
+  place.set(next);
+  return next;
+}
+
+function evalPop(form: ListNode, env: Env): LispValue {
+  const place = resolvePlace(form.children[1]!, env);
+  const cell = place.get();
+  if (cell.kind !== "cons") throw new Error("pop: place is not a list");
+  place.set(cell.cdr);
+  return cell.car;
 }
 
 function evalIncDecf(form: ListNode, env: Env, sign: number): LispValue {
@@ -263,6 +359,16 @@ export function evaluate(node: AstNode, env: Env): LispValue {
         return evalDefParameter(node, env);
       case "SETQ":
         return evalSetQ(node, env);
+      case "DOLIST":
+        return evalDolist(node, env);
+      case "DOTIMES":
+        return evalDotimes(node, env);
+      case "RETURN":
+        return evalReturn(node, env);
+      case "PUSH":
+        return evalPush(node, env);
+      case "POP":
+        return evalPop(node, env);
       default:
         return evalCall(node, env);
     }
