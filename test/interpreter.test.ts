@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parse } from "../src/core/reader";
+import { parse, type AstNode } from "../src/core/reader";
 import { NIL, cons, intern, isNil, type LispValue } from "../src/core/values";
 import {
   astToValue,
@@ -8,6 +8,7 @@ import {
   define,
   evaluate,
   lookup,
+  withObserver,
 } from "../src/core/interpreter";
 
 //LLM-written tests
@@ -553,4 +554,99 @@ test("pushes into an array element place", () => {
 
 test("rejects pop on something that is not a place", () => {
   assert.throws(() => run("(pop 5)"));
+});
+
+//LLM-written tests
+test("reports enter and leave events for nested forms", () => {
+  const events: string[] = [];
+  const observer = {
+    onEnterForm: (node: AstNode) => events.push(`in:${node.kind}`),
+    onLeaveForm: (node: AstNode) => events.push(`out:${node.kind}`),
+  };
+
+  withObserver(observer, () => evaluate(parse("(+ 1 2)"), createEnv(null)));
+
+  assert.ok(events.includes("in:list"));
+  assert.ok(events.includes("in:atom"));
+  assert.equal(
+    events.filter((event) => event.startsWith("in:")).length,
+    events.filter((event) => event.startsWith("out:")).length,
+  );
+});
+
+test("records a balanced call frame for every recursive call", () => {
+  let calls = 0;
+  let returns = 0;
+  const observer = {
+    onCallEnter: () => {
+      calls += 1;
+    },
+    onCallExit: () => {
+      returns += 1;
+    },
+  };
+
+  withObserver(observer, () =>
+    evaluate(
+      parse(
+        "(progn (defun fact (n) (if (= n 0) 1 (* n (fact (- n 1))))) (fact 3))",
+      ),
+      createEnv(null),
+    ),
+  );
+
+  assert.equal(calls, returns);
+  assert.ok(calls > 3);
+});
+
+test("reports the value each user function returns", () => {
+  let last: LispValue | undefined;
+  const observer = {
+    onCallExit: (_fn: unknown, value: LispValue) => {
+      last = value;
+    },
+  };
+
+  withObserver(observer, () =>
+    evaluate(
+      parse(
+        "(progn (defun fact (n) (if (= n 0) 1 (* n (fact (- n 1))))) (fact 3))",
+      ),
+      createEnv(null),
+    ),
+  );
+
+  assert.deepEqual(last, num(6));
+});
+
+test("restores the previous observer after a nested scope", () => {
+  const outer: string[] = [];
+  const inner: string[] = [];
+  const recorder = (log: string[]) => ({
+    onEnterForm: (node: AstNode) => log.push(node.kind),
+  });
+
+  withObserver(recorder(outer), () => {
+    evaluate(parse("1"), createEnv(null));
+    withObserver(recorder(inner), () => evaluate(parse("2"), createEnv(null)));
+    evaluate(parse("3"), createEnv(null));
+  });
+
+  assert.equal(inner.length, 1);
+  assert.equal(outer.length, 2);
+});
+
+test("does not leak an observer that throws", () => {
+  const observer = {
+    onEnterForm: () => {
+      throw new Error("observer failure");
+    },
+  };
+
+  assert.throws(() =>
+    withObserver(observer, () => evaluate(parse("1"), createEnv(null))),
+  );
+
+  // If the observer had leaked, this call would throw as well.
+  assert.deepEqual(evaluate(parse("2"), createEnv(null)), num(2));
 });

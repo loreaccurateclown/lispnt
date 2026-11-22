@@ -25,6 +25,26 @@ export class ReturnSignal {
   constructor(readonly value: LispValue) {}
 }
 
+export interface EvaluationObserver {
+  onEnterForm?(node: AstNode, env: Env): void;
+  onLeaveForm?(node: AstNode, env: Env, value: LispValue): void;
+  onCallEnter?(fn: FunctionValue, args: LispValue[]): void;
+  onCallExit?(fn: FunctionValue, value: LispValue): void;
+}
+
+let currentObserver: EvaluationObserver | null = null;
+
+export function withObserver<T>(observer: EvaluationObserver, run: () => T): T {
+  const previous = currentObserver;
+  currentObserver = observer;
+  try {
+    return run();
+  } finally {
+    //I have absolutely no idea what this does
+    currentObserver = previous;
+  }
+}
+
 export function createEnv(parent: Env | null): Env {
   const env = { vars: new Map(), parent };
   if (parent === null) {
@@ -44,7 +64,59 @@ export function resetEvaluationBudget(): void {
   steps = 0;
 }
 
-export function evaluate(node: AstNode, env: Env): LispValue {
+export function evaluate(node: AstNode, env: Env  ): LispValue {
+  const observer = currentObserver;
+  if (observer === null) return evaluateInner(node, env);
+
+  observer.onEnterForm?.(node, env);
+  const value = evaluateInner(node, env );
+  observer.onLeaveForm?.(node, env, value );
+  return value;
+}
+
+export function applyFunction(fn: FunctionValue, args: LispValue[]): LispValue {
+  if (args.length !== fn.params.length) {
+    throw new LispEvalError(
+      "arity",
+      null,
+      `${fn.name} expects ${fn.params.length} argument(s), got ${args.length}`,
+    );
+  }
+
+  const scope = createEnv(fn.env);
+  for (let index = 0; index < fn.params.length; index += 1) {
+    define(scope, fn.params[index]!, args[index]!);
+  }
+
+  currentObserver?.onCallEnter?.(fn, args);
+  const value = evaluateBody(fn.body, scope );
+  currentObserver?.onCallExit?.(fn, value );
+  return value;
+}
+
+export function callValue(callable: LispValue, args: LispValue[]): LispValue {
+  if (callable.kind === "function") return applyFunction(callable, args);
+  if (callable.kind === "builtin") return applyBuiltIn(callable, args);
+  throw new LispEvalError(
+    "type-error",
+    null,
+    `not a function: ${callable.kind}`,
+  );
+}
+
+export function visibleBindings(env: Env  ): Map<string, LispValue> {
+  const visible = new Map<string, LispValue>();
+  let current: Env | null = env;
+  while (current !== null) {
+    for (const [name, value] of current.vars) {
+      if (!visible.has(name) ) visible.set(name, value  );
+    }
+    current = current.parent;
+  }
+  return visible;
+}
+
+function evaluateInner(node: AstNode, env: Env): LispValue {
   steps += 1;
   if (steps > STEP_LIMIT)
     throw new LispEvalError(
@@ -54,7 +126,8 @@ export function evaluate(node: AstNode, env: Env): LispValue {
     );
   if (node.kind === "quote") return astToValue(node.target);
   // A vector literal evaluates to itself; #(1 2 3) is data, not a call.
-  if (node.kind === "list" && node.prefix !== undefined) return astToValue(node);
+  if (node.kind === "list" && node.prefix !== undefined)
+    return astToValue(node);
   if (node.kind === "list") {
     const head = node.children[0];
     const name = head === undefined ? undefined : symbolName(head);
@@ -76,7 +149,11 @@ export function evaluate(node: AstNode, env: Env): LispValue {
       case "QUOTE": {
         const target = node.children[1];
         if (target === undefined)
-          throw new LispEvalError("malformed-form", null, "quote needs at least one form");
+          throw new LispEvalError(
+            "malformed-form",
+            null,
+            "quote needs at least one form",
+          );
         return astToValue(target);
       }
       case "PROGN":
@@ -174,7 +251,8 @@ export function resolvePlace(node: AstNode, env: Env): Place {
     };
   }
 
-  if (node.kind !== "list") throw new LispEvalError("not-a-place", node.start, "not a place");
+  if (node.kind !== "list")
+    throw new LispEvalError("not-a-place", node.start, "not a place");
 
   const head = node.children[0];
   const name = head === undefined ? undefined : symbolName(head);
@@ -204,7 +282,11 @@ export function resolvePlace(node: AstNode, env: Env): Place {
       };
     }
     default:
-      throw new LispEvalError("not-a-place", node.start, `not a place: ${String(name)}`);
+      throw new LispEvalError(
+        "not-a-place",
+        node.start,
+        `not a place: ${String(name)}`,
+      );
   }
 }
 
@@ -230,7 +312,9 @@ function evalReturn(form: ListNode, env: Env): LispValue {
 function evalDolist(form: ListNode, env: Env): LispValue {
   const spec = form.children[1];
   if (spec === undefined || spec.kind !== "list")
-    throw new LispEvalError("malformed-form", null, 
+    throw new LispEvalError(
+      "malformed-form",
+      null,
       "dolist needs to be in the form (var list result), var = item in list (iterates), the list you iterate and an optional result returned when the loop finishes.",
     );
 
@@ -241,7 +325,9 @@ function evalDolist(form: ListNode, env: Env): LispValue {
   const name = variable === undefined ? undefined : symbolName(variable);
 
   if (name === undefined || varListNode == undefined)
-    throw new LispEvalError("malformed-form", null, 
+    throw new LispEvalError(
+      "malformed-form",
+      null,
       "dolist needs an iterating variable and a list to iterate through",
     );
 
@@ -265,14 +351,22 @@ function evalDolist(form: ListNode, env: Env): LispValue {
 function evalDotimes(form: ListNode, env: Env): LispValue {
   const spec = form.children[1];
   if (spec === undefined || spec.kind !== "list")
-    throw new LispEvalError("malformed-form", null, "dotimes needs (var count [result])");
+    throw new LispEvalError(
+      "malformed-form",
+      null,
+      "dotimes needs (var count [result])",
+    );
 
   const variable = spec.children[0];
   const countNode = spec.children[1];
   const resultNode = spec.children[2];
   const name = variable === undefined ? undefined : symbolName(variable);
   if (name === undefined || countNode === undefined)
-    throw new LispEvalError("malformed-form", null, "dotimes needs a variable and a count");
+    throw new LispEvalError(
+      "malformed-form",
+      null,
+      "dotimes needs a variable and a count",
+    );
 
   const count = expectNumber(evaluate(countNode, env));
 
@@ -297,7 +391,11 @@ function evalPush(form: ListNode, env: Env): LispValue {
   // CL's push is binary: (push item place). Extra arguments are a caller error,
   // not a multi-push.
   if (form.children.length !== 3) {
-    throw new LispEvalError("malformed-form", null, "push takes an item and a place");
+    throw new LispEvalError(
+      "malformed-form",
+      null,
+      "push takes an item and a place",
+    );
   }
 
   const place = resolvePlace(form.children[2]!, env);
@@ -309,7 +407,8 @@ function evalPush(form: ListNode, env: Env): LispValue {
 function evalPop(form: ListNode, env: Env): LispValue {
   const place = resolvePlace(form.children[1]!, env);
   const cell = place.get();
-  if (cell.kind !== "cons") throw new LispEvalError("type-error", null, "pop: place is not a list");
+  if (cell.kind !== "cons")
+    throw new LispEvalError("type-error", null, "pop: place is not a list");
   place.set(cell.cdr);
   return cell.car;
 }
@@ -327,30 +426,6 @@ function evalIncDecf(form: ListNode, env: Env, sign: number): LispValue {
   };
   place.set(next);
   return next;
-}
-
-export function applyFunction(fn: FunctionValue, args: LispValue[]): LispValue {
-  if (args.length !== fn.params.length) {
-    throw new LispEvalError("arity", null,
-      `${fn.name} expects ${fn.params.length} argument(s), got ${args.length}`,
-    );
-  }
-
-  const scope = createEnv(fn.env);
-  for (let index = 0; index < fn.params.length; index += 1) {
-    define(scope, fn.params[index]!, args[index]!);
-  }
-  return evaluateBody(fn.body, scope);
-}
-
-export function callValue(callable: LispValue, args: LispValue[]): LispValue {
-  if (callable.kind === "function") return applyFunction(callable, args);
-  if (callable.kind === "builtin") return applyBuiltIn(callable, args);
-  throw new LispEvalError(
-    "type-error",
-    null,
-    `not a function: ${callable.kind}`,
-  );
 }
 
 function attachPosition(
@@ -374,11 +449,20 @@ register("APPLY", 2, null, (args) => {
 //helper for resolve place along with arrayAndIndex
 function expectConsPlace(form: ListNode, env: Env): ConsValue {
   const target = form.children[1];
-  if (target === undefined) throw new LispEvalError("malformed-form", null, "CAR/CDR place needs one argument");
+  if (target === undefined)
+    throw new LispEvalError(
+      "malformed-form",
+      null,
+      "CAR/CDR place needs one argument",
+    );
 
   const value = evaluate(target, env);
   if (value.kind !== "cons")
-    throw new LispEvalError("type-error", null, `expected a cons, got ${value.kind}`);
+    throw new LispEvalError(
+      "type-error",
+      null,
+      `expected a cons, got ${value.kind}`,
+    );
 
   return value;
 }
@@ -390,14 +474,20 @@ function arrayAndIndex(
   const sequenceNode = form.children[1];
   const indexNode = form.children[2];
   if (sequenceNode === undefined || indexNode === undefined) {
-    throw new LispEvalError("malformed-form", null, 
+    throw new LispEvalError(
+      "malformed-form",
+      null,
       `${symbolName(form.children[0]!)} place needs a sequence and an index`,
     );
   }
 
   const sequence = evaluate(sequenceNode, env);
   if (sequence.kind !== "array")
-    throw new LispEvalError("type-error", null, `expected an array, got ${sequence.kind}`);
+    throw new LispEvalError(
+      "type-error",
+      null,
+      `expected an array, got ${sequence.kind}`,
+    );
 
   const indexValue = evaluate(indexNode, env);
   if (indexValue.kind !== "number" || !Number.isInteger(indexValue.value))
@@ -460,7 +550,11 @@ function designatedFunction(node: AstNode, env: Env): LispValue {
     throw new LispEvalError("type-error", null, "not a function designator");
   const target = lookup(env, name.slice(2)); // slice(2): strip the leading "#'" to get the bare function name
   if (target === undefined)
-    throw new LispEvalError("undefined-function", node.start, `undefined function: ${name.slice(2)}`); // slice(2): same strip, this time for the error text
+    throw new LispEvalError(
+      "undefined-function",
+      node.start,
+      `undefined function: ${name.slice(2)}`,
+    ); // slice(2): same strip, this time for the error text
 
   return target;
 }
@@ -483,7 +577,8 @@ function evalIf(form: ListNode, env: Env): LispValue {
   const then = form.children[2];
   const otherwise = form.children[3];
 
-  if (test === undefined) throw new LispEvalError("malformed-form", null, "if needs test");
+  if (test === undefined)
+    throw new LispEvalError("malformed-form", null, "if needs test");
   if (!isTruthy(evaluate(test, env)))
     return otherwise === undefined ? NIL : evaluate(otherwise, env);
   //this feels very strange
@@ -494,7 +589,11 @@ function evalCond(form: ListNode, env: Env): LispValue {
   for (const clauseNode of form.children.slice(1)) {
     // slice(1): drop "cond", keep the clause forms
     if (clauseNode.kind !== "list")
-      throw new LispEvalError("malformed-form", null, "cond clause must be a list");
+      throw new LispEvalError(
+        "malformed-form",
+        null,
+        "cond clause must be a list",
+      );
     const testNode = clauseNode.children[0];
     if (testNode === undefined) continue;
     const name = symbolName(testNode);
@@ -510,23 +609,37 @@ function evalCond(form: ListNode, env: Env): LispValue {
 function evalLet(form: ListNode, env: Env, sequential: boolean): LispValue {
   const bindingsNode = form.children[1];
   if (bindingsNode === undefined || bindingsNode.kind !== "list")
-    throw new LispEvalError("malformed-form", null, "let needs a bindings list");
+    throw new LispEvalError(
+      "malformed-form",
+      null,
+      "let needs a bindings list",
+    );
 
   const scope = createEnv(env);
   for (const bindingNode of bindingsNode.children) {
     if (bindingNode.kind === "atom") {
       const name = symbolName(bindingNode);
       if (name === undefined)
-        throw new LispEvalError("malformed-form", null, "evalLet: bindingNode has no name");
+        throw new LispEvalError(
+          "malformed-form",
+          null,
+          "evalLet: bindingNode has no name",
+        );
       define(scope, name, NIL);
       continue;
     } //to be real i have no idea what any of this is doing. I have several guesses, but nothing concrete.
-    if (bindingNode.kind !== "list") throw new LispEvalError("malformed-form", null, "binding must be a list");
+    if (bindingNode.kind !== "list")
+      throw new LispEvalError("malformed-form", null, "binding must be a list");
     const nameNode = bindingNode.children[0];
     const valueNode = bindingNode.children[1];
     const name = nameNode === undefined ? undefined : symbolName(nameNode);
 
-    if (name === undefined) throw new LispEvalError("malformed-form", null, "binding needs a symbol name");
+    if (name === undefined)
+      throw new LispEvalError(
+        "malformed-form",
+        null,
+        "binding needs a symbol name",
+      );
 
     const value =
       valueNode === undefined
@@ -547,13 +660,22 @@ function evalDefun(form: ListNode, env: Env): LispValue {
     paramsNode === undefined ||
     paramsNode.kind !== "list"
   )
-    throw new LispEvalError("malformed-form", null, "defun needs a name and an argument list");
+    throw new LispEvalError(
+      "malformed-form",
+      null,
+      "defun needs a name and an argument list",
+    );
 
   const params: string[] = [];
 
   for (const paramNode of paramsNode.children) {
     const param = symbolName(paramNode);
-    if (param === undefined) throw new LispEvalError("malformed-form", null, "parameter must be a symbol");
+    if (param === undefined)
+      throw new LispEvalError(
+        "malformed-form",
+        null,
+        "parameter must be a symbol",
+      );
     params.push(param);
   }
 
@@ -573,7 +695,12 @@ function evalDefParameter(form: ListNode, env: Env): LispValue {
   const nameNode = form.children[1];
 
   const name = nameNode === undefined ? undefined : symbolName(nameNode);
-  if (name === undefined) throw new LispEvalError("malformed-form", null, "evalDefParameter: name not defined");
+  if (name === undefined)
+    throw new LispEvalError(
+      "malformed-form",
+      null,
+      "evalDefParameter: name not defined",
+    );
 
   const valueNode = form.children[2];
   define(env, name, valueNode === undefined ? NIL : evaluate(valueNode, env));
@@ -601,7 +728,11 @@ function evalSetQ(form: ListNode, env: Env): LispValue {
   while (index + 1 < form.children.length) {
     const name = symbolName(form.children[index]!);
     if (name === undefined)
-      throw new LispEvalError("malformed-form", null, "evalDefParameter: name not defined");
+      throw new LispEvalError(
+        "malformed-form",
+        null,
+        "evalDefParameter: name not defined",
+      );
     result = evaluate(form.children[index + 1]!, env); //! before in js, ! after in ts. #wow
     if (!assign(env, name, result)) define(env, name, result);
     index += 2;
@@ -631,14 +762,16 @@ function evalOr(form: ListNode, env: Env): LispValue {
 
 function evalWhen(form: ListNode, env: Env): LispValue {
   const testNode = form.children[1];
-  if (testNode === undefined) throw new LispEvalError("malformed-form", null, "when needs a test");
+  if (testNode === undefined)
+    throw new LispEvalError("malformed-form", null, "when needs a test");
   if (!isTruthy(evaluate(testNode, env))) return NIL;
   return evaluateBody(form.children.slice(2), env); // slice(2): drop "when" and the test, keep the body
 }
 
 function evalUnless(form: ListNode, env: Env): LispValue {
   const testNode = form.children[1];
-  if (testNode === undefined) throw new LispEvalError("malformed-form", null, "unless needs a test");
+  if (testNode === undefined)
+    throw new LispEvalError("malformed-form", null, "unless needs a test");
   if (isTruthy(evaluate(testNode, env))) return NIL;
   return evaluateBody(form.children.slice(2), env); // slice(2): drop "unless" and the test, keep the body
 }
