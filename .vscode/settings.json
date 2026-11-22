@@ -4,5 +4,7 @@
     "^node:",
     "^(crypto|zlib|util|test|child_process|fs|path)$"
   ],
-  "typescript.preferences.includePackageJsonAutoImports": "off"
+  "typescript.preferences.includePackageJsonAutoImports": "off",
+  "editor.suggestSelection": "recentlyUsedByPrefix",
+  "editor.suggest.localityBonus": true
 }
