@@ -5,6 +5,9 @@
     "^(crypto|zlib|util|test|child_process|fs|path)$"
   ],
   "typescript.preferences.includePackageJsonAutoImports": "off",
+  "typescript.preferences.autoImportFileExcludePatterns": [
+    "**/node_modules/@types/node/**"
+  ],
   "editor.suggestSelection": "recentlyUsedByPrefix",
   "editor.suggest.localityBonus": true
 }

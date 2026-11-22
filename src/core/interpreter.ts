@@ -124,6 +124,11 @@ function evaluateInner(node: AstNode, env: Env): LispValue {
       null,
       "evaluation took too many steps",
     );
+  if (node.kind === "quote" && node.quoteKind === "#'") {
+    // #'f is the function value of f; #'(lambda ...) evaluates to a function.
+    if (node.target.kind === "atom") return functionByName(node.target, env);
+    return evaluate(node.target, env);
+  }
   if (node.kind === "quote") return astToValue(node.target);
   // A vector literal evaluates to itself; #(1 2 3) is data, not a call.
   if (node.kind === "list" && node.prefix !== undefined)
@@ -170,6 +175,12 @@ function evaluateInner(node: AstNode, env: Env): LispValue {
         return evalLet(node, env, true);
       case "DEFUN":
         return evalDefun(node, env);
+      case "LAMBDA":
+        return evalLambda(node, env);
+      case "LABELS":
+        return evalLocalFunctions(node, env, true);
+      case "FLET":
+        return evalLocalFunctions(node, env, false);
       case "DEFPARAMETER":
       case "DEFVAR":
         return evalDefParameter(node, env);
@@ -191,7 +202,6 @@ function evaluateInner(node: AstNode, env: Env): LispValue {
   }
   //node is AtomNode
   const raw = String(node.value);
-  if (raw.startsWith("#'")) return designatedFunction(node, env);
   if (raw.startsWith(":")) return intern(raw);
 
   if (node.atomType === "number")
@@ -543,20 +553,46 @@ function resolveCallable(head: AstNode, env: Env): LispValue {
   }
 }
 
-function designatedFunction(node: AstNode, env: Env): LispValue {
+function functionByName(node: AstNode, env: Env): LispValue {
   const name = symbolName(node);
 
-  if (name === undefined || !name.startsWith("#'"))
+  if (name === undefined)
     throw new LispEvalError("type-error", null, "not a function designator");
-  const target = lookup(env, name.slice(2)); // slice(2): strip the leading "#'" to get the bare function name
-  if (target === undefined)
+
+  const target = lookup(env, name);
+  if (target === undefined) {
+    if (STANDARD_SYMBOLS.has(name)) {
+      throw new LispEvalError(
+        "unsupported-standard",
+        node.start,
+        `Lispnt does not implement ${name}`,
+      );
+    }
     throw new LispEvalError(
       "undefined-function",
       node.start,
-      `undefined function: ${name.slice(2)}`,
-    ); // slice(2): same strip, this time for the error text
+      `undefined function: ${name}`,
+    );
+  }
 
   return target;
+}
+
+function parameterNames(paramsNode: ListNode, form: ListNode): string[] {
+  const params: string[] = [];
+
+  for (const paramNode of paramsNode.children) {
+    const param = symbolName(paramNode);
+    if (param === undefined)
+      throw new LispEvalError(
+        "malformed-form",
+        form.start,
+        "parameter must be a symbol",
+      );
+    params.push(param);
+  }
+
+  return params;
 }
 
 function symbolName(node: AstNode): string | undefined {
@@ -666,18 +702,7 @@ function evalDefun(form: ListNode, env: Env): LispValue {
       "defun needs a name and an argument list",
     );
 
-  const params: string[] = [];
-
-  for (const paramNode of paramsNode.children) {
-    const param = symbolName(paramNode);
-    if (param === undefined)
-      throw new LispEvalError(
-        "malformed-form",
-        null,
-        "parameter must be a symbol",
-      );
-    params.push(param);
-  }
+  const params = parameterNames(paramsNode, form);
 
   //placeholder until 3.3
   define(env, name, {
@@ -689,6 +714,82 @@ function evalDefun(form: ListNode, env: Env): LispValue {
   });
 
   return intern(name);
+}
+
+function evalLambda(form: ListNode, env: Env): FunctionValue {
+  const paramsNode = form.children[1];
+  if (paramsNode === undefined || paramsNode.kind !== "list")
+    throw new LispEvalError(
+      "malformed-form",
+      form.start,
+      "lambda needs an argument list",
+    );
+
+  return {
+    kind: "function",
+    name: "LAMBDA",
+    params: parameterNames(paramsNode, form),
+    body: form.children.slice(2), // slice(2): drop "lambda" and the parameter list
+    env,
+  };
+}
+
+function evalLocalFunctions(
+  form: ListNode,
+  env: Env,
+  recursive: boolean,
+): LispValue {
+  const definitions = form.children[1];
+  if (definitions === undefined || definitions.kind !== "list")
+    throw new LispEvalError(
+      "malformed-form",
+      form.start,
+      "a local function form needs a list of definitions",
+    );
+
+  const scope = createEnv(env);
+  const pending: Array<[string, FunctionValue]> = [];
+
+  for (const definitionNode of definitions.children) {
+    if (definitionNode.kind !== "list")
+      throw new LispEvalError(
+        "malformed-form",
+        definitionNode.start,
+        "each definition must be a list",
+      );
+
+    const nameNode = definitionNode.children[0];
+    const paramsNode = definitionNode.children[1];
+    const name = nameNode === undefined ? undefined : symbolName(nameNode);
+
+    if (
+      name === undefined ||
+      paramsNode === undefined ||
+      paramsNode.kind !== "list"
+    )
+      throw new LispEvalError(
+        "malformed-form",
+        definitionNode.start,
+        "a definition needs a name and an argument list",
+      );
+
+    pending.push([
+      name,
+      {
+        kind: "function",
+        name,
+        params: parameterNames(paramsNode, definitionNode),
+        body: definitionNode.children.slice(2), // slice(2): drop the name and parameter list
+        // labels definitions see each other, so they close over the new scope;
+        // flet definitions close over the outer env and cannot recurse by name.
+        env: recursive ? scope : env,
+      },
+    ]);
+  }
+
+  for (const [name, fn] of pending) define(scope, name, fn);
+
+  return evaluateBody(form.children.slice(2), scope); // slice(2): drop the form head and the definitions
 }
 
 function evalDefParameter(form: ListNode, env: Env): LispValue {
@@ -778,8 +879,9 @@ function evalUnless(form: ListNode, env: Env): LispValue {
 
 export function astToValue(node: AstNode): LispValue {
   if (node.kind === "quote") {
-    //''x is the data (quote x)
-    return cons(intern("QUOTE"), cons(astToValue(node.target), NIL));
+    //''x is the data (quote x); #'x is the data (function x)
+    const head = intern(node.quoteKind === "#'" ? "FUNCTION" : "QUOTE");
+    return cons(head, cons(astToValue(node.target), NIL));
   }
 
   if (node.kind === "atom") {

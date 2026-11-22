@@ -355,6 +355,7 @@ test("parses a quoted symbol", () => {
 
   assert.deepEqual(node, {
     kind: "quote",
+    quoteKind: "'",
     target: {
       kind: "atom",
       atomType: "symbol",
@@ -371,6 +372,7 @@ test("parses a quoted list", () => {
 
   assert.deepEqual(node, {
     kind: "quote",
+    quoteKind: "'",
     target: {
       kind: "list",
       children: [
@@ -400,8 +402,10 @@ test("parses nested quotes", () => {
 
   assert.deepEqual(node, {
     kind: "quote",
+    quoteKind: "'",
     target: {
       kind: "quote",
+      quoteKind: "'",
       target: {
         kind: "atom",
         atomType: "symbol",
@@ -831,4 +835,44 @@ test("sets tail only for dotted lists", () => {
 
   assert.notEqual(dotted.tail, undefined);
   assert.equal(plain.tail, undefined);
+});
+
+//LLM-written tests
+test("parses a function quote as a quote node", () => {
+  assert.deepEqual(parse("#'car"), {
+    kind: "quote",
+    quoteKind: "#'",
+    target: {
+      kind: "atom",
+      atomType: "symbol",
+      value: "car",
+      start: { line: 1, column: 3, offset: 2 },
+    },
+    start: { line: 1, column: 1, offset: 0 },
+    end: { line: 1, column: 6, offset: 5 },
+  });
+});
+
+test("parses a function quote around a lambda", () => {
+  const node = parse("#'(lambda (x) x)");
+
+  assert.equal(node.kind, "quote");
+  if (node.kind !== "quote") return;
+
+  assert.equal(node.quoteKind, "#'");
+  assert.equal(node.target.kind, "list");
+  assert.deepEqual(node.start, { line: 1, column: 1, offset: 0 });
+  assert.deepEqual(node.end, { line: 1, column: 17, offset: 16 });
+});
+
+test("keeps plain quotes distinguishable from function quotes", () => {
+  const quoted = parse("'x");
+  const functionQuoted = parse("#'x");
+
+  assert.equal(quoted.kind, "quote");
+  assert.equal(functionQuoted.kind, "quote");
+  if (quoted.kind !== "quote" || functionQuoted.kind !== "quote") return;
+
+  assert.equal(quoted.quoteKind, "'");
+  assert.equal(functionQuoted.quoteKind, "#'");
 });

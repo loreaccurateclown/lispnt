@@ -26,8 +26,9 @@ export interface ListNode {
 export interface QuoteNode {
   //I decided to not desugar '() as shorthand for (quote) as this is primarily a user-oriented linter and should always be able to traverse their code as they wrote it
   readonly kind: "quote";
+  readonly quoteKind: "'" | "#'";
   readonly target: AstNode;
-  readonly start: Position; //'
+  readonly start: Position; //' or #
   readonly end: Position;
 }
 export interface Reader {
@@ -201,7 +202,7 @@ export function createReader(source: string): Reader {
       case ")":
         throw new ReaderError("stray-closer", here(), "stray closer detected");
       case "'": //I initially wrote this switch statement on a whim but it's actually paid off massively for easily adding conditionals. Go figure.
-        return readQuote();
+        return readQuote("'", 1);
       case "#":
         if (peekAt(1) === "(") {
           //#(, start of vector literal
@@ -209,6 +210,7 @@ export function createReader(source: string): Reader {
           advance();
           return readList(start, "#(");
         }
+        if (peekAt(1) === "'") return readQuote("#'", 2);
         return readAtom();
       default: //Good explanation for switch efficiency vs a big if statement: you can check all conditionals immediately with an if,
         //while a switch will ALWAYS have to check the upper cases before resolving to our common form.
@@ -328,12 +330,14 @@ export function createReader(source: string): Reader {
     };
   }
 
-  function readQuote(): QuoteNode {
-    const start = here(); //position of the '
-    advance();
+  function readQuote(quoteKind: "'" | "#'", consumedLength: number): QuoteNode {
+    const start = here(); //position of the ' or the #
+    advance(); //the "'" or the "#"
+    if (consumedLength === 2) advance(); //the "'" of "#'"
+    skipTrivia();
     const target = readNode(); //notably not readAtom, as there may be a bracket '() requiring readList or 'text requiring readAtom
     const end = here(); //thanks to advance
-    return { kind: "quote", target, start, end };
+    return { kind: "quote", quoteKind, target, start, end };
   }
 
   function parse(): AstNode {

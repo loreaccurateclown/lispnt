@@ -650,3 +650,84 @@ test("does not leak an observer that throws", () => {
   // If the observer had leaked, this call would throw as well.
   assert.deepEqual(evaluate(parse("2"), createEnv(null)), num(2));
 });
+
+//LLM-written tests
+test("applies a lambda to its argument", () => {
+  assert.deepEqual(run("((lambda (x) x) 5)"), num(5));
+});
+
+test("calls a lambda through funcall with several arguments", () => {
+  assert.deepEqual(run("(funcall (lambda (a b) (+ a b)) 2 3)"), num(5));
+});
+
+test("evaluates a lambda with no parameters", () => {
+  assert.deepEqual(run("((lambda () 7))"), num(7));
+});
+
+test("lets a lambda close over an outer binding", () => {
+  assert.deepEqual(run("(let ((n 10)) ((lambda (x) (+ x n)) 5))"), num(15));
+});
+
+test("rejects a lambda without an argument list", () => {
+  assert.throws(() => run("(lambda 1)"));
+});
+
+test("calls a function by name through a function quote", () => {
+  assert.deepEqual(run("(progn (defun f (x) x) (funcall #'f 3))"), num(3));
+});
+
+test("calls a lambda through a function quote", () => {
+  assert.deepEqual(run("(funcall #'(lambda (x) (* x 2)) 4)"), num(8));
+});
+
+test("converts a function quote to the data (FUNCTION F)", () => {
+  assert.deepEqual(
+    astToValue(parse("#'f")),
+    cons(intern("FUNCTION"), cons(intern("F"), NIL)),
+  );
+});
+
+test("calls a labels definition", () => {
+  assert.deepEqual(run("(labels ((f (x) (+ x 1))) (f 2))"), num(3));
+});
+
+test("lets labels definitions call each other", () => {
+  assert.deepEqual(
+    run(
+      "(labels ((ev (n) (if (= n 0) t (od (- n 1)))) (od (n) (if (= n 0) nil (ev (- n 1))))) (ev 4))",
+    ),
+    intern("T"),
+  );
+});
+
+test("lets a labels definition close over an outer binding", () => {
+  assert.deepEqual(run("(let ((k 2)) (labels ((f (x) (* x k))) (f 3)))"), num(6));
+});
+
+test("does not leak labels definitions", () => {
+  assert.throws(() => run("(progn (labels ((f (x) x)) (f 1)) (f 1))"));
+});
+
+test("lets a labels definition shadow a builtin", () => {
+  assert.deepEqual(run("(labels ((length (x) 0)) (length (list 1 2)))"), num(0));
+});
+
+test("rejects a malformed labels form", () => {
+  assert.throws(() => run("(labels 1 2)"));
+});
+
+test("calls an flet definition", () => {
+  assert.deepEqual(run("(flet ((f (x) (+ x 1))) (f 2))"), num(3));
+});
+
+test("lets an flet definition close over an outer binding", () => {
+  assert.deepEqual(run("(let ((k 3)) (flet ((f (x) (* x k))) (f 2)))"), num(6));
+});
+
+test("does not let an flet definition call itself", () => {
+  assert.throws(() => run("(flet ((g (n) (if (= n 0) 0 (g (- n 1))))) (g 2))"));
+});
+
+test("does not leak flet definitions", () => {
+  assert.throws(() => run("(progn (flet ((f (x) x)) (f 1)) (f 1))"));
+});
