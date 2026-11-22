@@ -3,8 +3,8 @@
 Read-only diagnostic path for Common Lisp (SBCL), alongside OLIVE.
 
 Current state and working conventions live in `HANDOFF.md`; this file is the
-long-form milestone plan. Totals today: 223 tests (62 reader, 42 analyze, 119
-interpreter).
+long-form milestone plan. Totals today: 270 tests (62 reader, 42 analyze, 119
+interpreter, 39 print, 8 pipeline).
 
 ## Milestones
 
@@ -18,7 +18,7 @@ interpreter).
   *Status: complete — 223 tests (62 reader, 42 analyze, 119 interpreter). Special forms incl. `let*`, `cond`, `when`/`unless`, `progn`, `defun`/`lambda`, `labels`/`flet`, `setq`/`setf` with places, `dolist`/`dotimes`/`return`, `push`/`pop`; forty builtins; arrays; dotted pairs; `#'` function quotes. Evaluation errors surface as diagnostics with codes and positions, a step budget stops runaway code, and an observer exposes form and call events for M4/M5.*
   *Deferred: `loop`/`do`, `case`, `defstruct`, `handler-case`, multiple values, hash tables, `#+`/`#-`, backquote/unquote. All are in the standard-symbols list, so they are silently skipped rather than misreported.*
 - **M4 — Value tracking.** Evaluate to a point, expose symbol values for inline display.
-  *Status: in progress. Design settled — snapshots per form with copied bindings, cursor resolves to the innermost snapshot, builtins plus `T`/`NIL` filtered, `unavailable` codes instead of fake diagnostics, per-line hints by default. Implementation starts at 4.1 `printValue`. Decisions are recorded in `HANDOFF.md`.*
+  *Status: in progress. Design settled — snapshots per form with copied bindings, cursor resolves to the innermost snapshot, builtins plus `T`/`NIL` filtered, `unavailable` codes instead of fake diagnostics, per-line hints by default. 4.1 `printValue` is complete (`src/core/print.ts`, 39 unit tests, 8 pipeline tests); the value run and hint layer are next. Decisions are recorded in `HANDOFF.md`.*
 - **M5 — Recursion trace.** Frame enter/exit recording, rendered as a call tree outside the REPL.
 - **M6 — Extension glue.** `activate()`, diagnostics provider, view. The only layer importing `vscode`.
 

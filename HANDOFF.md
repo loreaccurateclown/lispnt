@@ -13,15 +13,16 @@ Lisp image.
 ## Status
 
 - **M1 reader — complete.** M2 analyzer — complete. M3 interpreter — complete.
-- 223 tests: 62 reader, 42 analyze, 119 interpreter (`npm test`).
+- 270 tests: 62 reader, 42 analyze, 119 interpreter, 39 print, 8 pipeline
+  (`npm test`).
 - 38 real `.lisp` files produce **zero diagnostics**: 4 in `lisp_test_files/`,
   34 in `G:\My Drive\Labs\CPS305` (outside the repo). To re-check after a build,
   walk both trees for `*.lisp`/`*.lsp`, `readFileSync` each and pass it to
   `analyze` from `dist/src/core/analyze.js`, count the files that report
   anything. Reads from `G:` work under this sandbox; nothing is written. No
   script for this is committed.
-- In progress: M4 value tracking — design settled, next is 4.1 `printValue`.
-  Not started: M5 recursion trace, M6 extension glue.
+- In progress: M4 value tracking — 4.1 `printValue` complete; the value run and
+  hint layer are next. Not started: M5 recursion trace, M6 extension glue.
 - Optional last: M7 Prettier-style Lisp formatter; a benchmark pass.
 - Long-form plan and milestone history: `ROADMAP.md`. Keep its test counts in
   step with this file.
@@ -117,9 +118,10 @@ locally: just always prefix.
   mutations) is a possible optimization; decide by measuring the simple version
   against the cap.
 
-## Next task — 4.1 `printValue`
+## 4.1 `printValue` — complete
 
-New `src/core/print.ts`, `test/print.test.ts`, add the suite to the `test` script.
+`src/core/print.ts` (no caller yet — M4 wires it in), `test/print.test.ts` (39),
+`test/pipeline.test.ts` (8); both suites run from the `test` script.
 
 ```
 export interface PrintOptions { maxElements?: number; maxDepth?: number }
@@ -128,9 +130,27 @@ export function printValue(value: LispValue, options?: PrintOptions): string
 
 Rendering: `42`, `"hi"` (with `\"` and `\\` escaped), `FOO`, `NIL`, `T`,
 `(1 2 3)`, `(1 . 2)`, `#(1 2)`, `#<builtin CAR>`, `#<function F>`.
-Defaults: 8 elements per sequence, depth 3, `...` when truncated.
-**Conses are mutable, so cycles are possible** — track visited cells and print
-`...` instead of recursing.
+Defaults: 8 elements per sequence, depth 3.
+
+Truncation markers follow SBCL: `...` for cut elements, `#` for cut depth (SBCL
+prints `#` past `*print-level*` and `...` past `*print-length*`, verified on
+2.6.8). `maxElements` counts values, not the marker. A cycle prints `...` too;
+SBCL has no equivalent marker there.
+
+Defaults give byte-identical output to SBCL: `(1 2 3 4 5 6 7 8 ...)` and
+`(((#)))`, as does shared structure (`((2) (2))`).
+
+**Conses are mutable, so cycles are possible** — track the cells on the current
+path and print `...` instead of recursing. Shared but acyclic structure prints
+in full.
+
+The printer emits the faithful string only: no legend, no second entry point.
+Explaining what `#` means to a learner is a later, unsolved problem.
+
+`test/pipeline.test.ts` drives `parse` → `evaluate` → `printValue`, so the
+strings it asserts on come from values the interpreter built rather than
+literals a test constructed. Its own file because it imports the reader and
+interpreter; `print.test.ts` stays at the values layer.
 
 ## Open items
 
