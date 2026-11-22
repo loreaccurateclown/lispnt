@@ -4,7 +4,7 @@ import { analyze } from "../src/core/analyze";
 
 //LLM-written tests
 test("returns no diagnostics for a file with multiple valid forms", () => {
-  assert.deepEqual(analyze("(a) (b)"), []);
+  assert.deepEqual(analyze("(list 1) (list 2)"), []);
 });
 
 test("returns no diagnostics for empty input", () => {
@@ -29,19 +29,19 @@ test("reports a stray closer with a learner-facing message", () => {
 });
 
 test("reports an unterminated list at the paren on its own line", () => {
-  const diagnostics = analyze("(a)\n(b");
+  const diagnostics = analyze("(list 1)\n(list 2");
 
   assert.equal(diagnostics.length, 1);
   assert.equal(diagnostics[0]?.code, "unterminated-list");
-  assert.deepEqual(diagnostics[0]?.position, { line: 2, column: 1, offset: 4 });
+  assert.deepEqual(diagnostics[0]?.position, { line: 2, column: 1, offset: 9 });
 });
 
 test("reports an error that occurs after a valid first form", () => {
-  const diagnostics = analyze("(a))");
+  const diagnostics = analyze("(list 1))");
 
   assert.equal(diagnostics.length, 1);
   assert.equal(diagnostics[0]?.code, "stray-closer");
-  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 4, offset: 3 });
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 9, offset: 8 });
 });
 
 test("reports one diagnostic per stray closer", () => {
@@ -152,4 +152,115 @@ test("walks the tail of a dotted form once", () => {
   assert.equal(diagnostics.length, 1);
   assert.equal(diagnostics[0]?.code, "lambda-arglist");
   assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 26, offset: 25 });
+});
+
+//LLM-written tests
+test("reports a type error from a builtin", () => {
+  const diagnostics = analyze("(car 5)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "type-error");
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 1, offset: 0 });
+});
+
+test("reports a type error in an arithmetic argument", () => {
+  const diagnostics = analyze('(+ 1 "a")');
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "type-error");
+});
+
+test("reports division by zero", () => {
+  const diagnostics = analyze("(/ 1 0)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "division-by-zero");
+});
+
+test("reports an out of range array index", () => {
+  const diagnostics = analyze("(aref (vector 1) 5)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "index-error");
+});
+
+test("reports setf on a form that is not a place", () => {
+  const diagnostics = analyze("(setf (unknown-place) 1)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "not-a-place");
+});
+
+test("reports a call with the wrong argument count", () => {
+  const diagnostics = analyze("(progn (defun f (x) x) (f))");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "arity");
+});
+
+test("skips evaluation of a form already flagged by a shape check", () => {
+  const diagnostics = analyze("(defun f 1)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "defun-arglist");
+});
+
+test("reports nothing for valid evaluable code", () => {
+  assert.deepEqual(analyze("(progn (defun sq (x) (* x x)) (sq 4))"), []);
+});
+
+test("stops a long running loop with an evaluation budget", () => {
+  const diagnostics = analyze("(dotimes (i 100000000) (setq x 1))");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "evaluation-budget");
+});
+
+test("stops runaway recursion with an evaluation budget", () => {
+  const diagnostics = analyze("(progn (defun boom () (boom)) (boom))");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "evaluation-budget");
+});
+
+test("reports a call to a function that is not defined", () => {
+  const diagnostics = analyze("(foo 1)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "undefined-function");
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 2, offset: 1 });
+});
+
+test("stays quiet about standard functions Lispnt does not implement", () => {
+  assert.deepEqual(analyze('(format t "hi")'), []);
+});
+
+test("stays quiet about a standard higher order call", () => {
+  assert.deepEqual(analyze("(mapcar #'car (list (list 1)))"), []);
+});
+
+test("stays quiet about a special variable defined elsewhere", () => {
+  assert.deepEqual(analyze("*standard-output*"), []);
+});
+
+test("reports an unbound variable that is not a special", () => {
+  const diagnostics = analyze("(progn (defparameter *x* 5) y)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "unbound-variable");
+});
+
+test("evaluates a defparameter and sees it afterwards", () => {
+  assert.deepEqual(analyze("(progn (defparameter *x* 5) *x*)"), []);
+});
+
+test("stays quiet about undefined functions when the file loads another", () => {
+  assert.deepEqual(analyze('(load "other.lisp")\n(foo 1)'), []);
+});
+
+test("still reports undefined functions when nothing is loaded", () => {
+  const diagnostics = analyze("(foo 1)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "undefined-function");
 });

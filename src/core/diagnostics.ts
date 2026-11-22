@@ -1,4 +1,9 @@
-import { ReaderErrorCode, ReaderError } from "./errors";
+import {
+  ReaderErrorCode,
+  ReaderError,
+  EvalErrorCode,
+  LispEvalError,
+} from "./errors";
 import type { Position } from "./reader";
 
 export type DiagnosticSeverity = "error" | "warning" | "info";
@@ -9,7 +14,7 @@ export type ShapeCode =
   | "lambda-arglist"
   | "let-bindings";
 
-export type DiagnosticCode = ReaderErrorCode | ShapeCode;
+export type DiagnosticCode = ReaderErrorCode | ShapeCode | EvalErrorCode;
 
 export interface Diagnostic {
   //ideally this naming won't collide with vscode.Diagnostic
@@ -28,6 +33,43 @@ export function diagnosticFromError(error: ReaderError): Diagnostic {
     message: userMessage,
     position: error.position,
   };
+}
+
+export function diagnosticFromEvalError(
+  error: LispEvalError,
+  fallback: Position,
+): Diagnostic {
+  return {
+    code: error.code,
+    severity: "error",
+    message: evalMessage(error.code),
+    position: error.position ?? fallback,
+  };
+}
+
+function evalMessage(code: EvalErrorCode): string {
+  switch (code) {
+    case "arity":
+      return "Wrong number of arguments for this function.";
+    case "type-error":
+      return "That value is not the type this operation needs.";
+    case "index-error":
+      return "That index is outside the sequence.";
+    case "division-by-zero":
+      return "Division by zero.";
+    case "not-a-place":
+      return "That form cannot be assigned to.";
+    case "malformed-form":
+      return "This form is missing part of its syntax.";
+    case "evaluation-budget":
+      return "This code ran too long to check safely.";
+    case "unbound-variable":
+      return "This name has no value here. Check the spelling, or define it with defparameter or let.";
+    case "undefined-function":
+      return "No function with this name is defined. Check the spelling, or define it with defun.";
+    case "unsupported-standard":
+      return "Lispnt does not implement this standard Common Lisp function yet.";
+  }
 }
 
 function userMessageSwitcher(errorMessage: ReaderErrorCode): string {

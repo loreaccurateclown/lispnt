@@ -1,3 +1,4 @@
+import { LispEvalError } from "./errors";
 import {
   ArrayValue,
   BuiltInValue,
@@ -13,7 +14,9 @@ export const builtins = new Map<string, BuiltInValue>(); //needed to assign a ne
 
 export function applyBuiltIn(fn: BuiltInValue, args: LispValue[]) {
   if (args.length < fn.min || (fn.max !== null && args.length > fn.max)) {
-    throw new Error(
+    throw new LispEvalError(
+      "arity",
+      null,
       `${fn.name}: wrong number of arguments: got (${args.length})`,
     );
   }
@@ -22,25 +25,26 @@ export function applyBuiltIn(fn: BuiltInValue, args: LispValue[]) {
 
 export function expectNumber(value: LispValue): number {
   if (value.kind !== "number")
-    throw new Error(`expected a number, got ${value.kind}`);
+    throw new LispEvalError("type-error", null, `expected a number, got ${value.kind}`);
   return value.value; //2 for 1 deal. great value
 }
 
 export function expectCons(value: LispValue): ConsValue {
   if (value.kind !== "cons")
-    throw new Error(`expected a list, got ${value.kind}`);
+    throw new LispEvalError("type-error", null, `expected a list, got ${value.kind}`);
   return value;
 }
 
 export function expectInteger(value: LispValue): number {
   const number = expectNumber(value);
-  if (!Number.isInteger) throw new Error(`expected an integer, got ${number}`);
+  if (!Number.isInteger(number))
+    throw new LispEvalError("type-error", null, `expected an integer, got ${number}`);
   return number;
 }
 
 export function expectArray(value: LispValue): ArrayValue {
   if (value.kind !== "array") {
-    throw new Error(`expected an array, got ${value.kind}`);
+    throw new LispEvalError("type-error", null, `expected an array, got ${value.kind}`);
   }
   return value;
 }
@@ -157,14 +161,16 @@ register("/", 1, null, (args) => {
   //division. not too sure since Lisp does division Weirdly
   const first = expectNumber(args[0]!);
   if (args.length === 1) {
-    if (first === 0) throw new Error("/: division by zero");
+    if (first === 0)
+      throw new LispEvalError("division-by-zero", null, "/: division by zero");
     return { kind: "number", value: 1 / first }; //moment of truth
   }
   return {
     kind: "number",
     value: args.slice(1).reduce((total, arg) => {
       const divisor = expectNumber(arg);
-      if (divisor === 0) throw new Error("/: division by zero");
+      if (divisor === 0)
+        throw new LispEvalError("division-by-zero", null, "/: division by zero");
       return total / divisor; //hmm
     }, first),
   };
@@ -207,7 +213,7 @@ register("AREF", 2, 2, (args) => {
   const array = expectArray(args[0]!);
   const at = expectInteger(args[1]!);
   if (at < 0 || at >= array.elements.length)
-    throw new Error(`AREF: index ${at} out of range`);
+    throw new LispEvalError("index-error", null, `AREF: index ${at} out of range`);
   return array.elements[at] ?? NIL;
 });
 
@@ -283,7 +289,8 @@ register("EXPT", 2, 2, (args) => ({
 }));
 register("MOD", 2, 2, (args) => {
   const divisor = expectNumber(args[1]!);
-  if (divisor === 0) throw new Error("MOD: division by zero");
+  if (divisor === 0)
+    throw new LispEvalError("division-by-zero", null, "MOD: division by zero");
   // CL's mod takes the sign of the divisor; JS % takes the sign of the dividend
   const remainder = (expectNumber(args[0]!) % divisor) + divisor;
   return { kind: "number", value: remainder % divisor };
@@ -295,6 +302,10 @@ register("FLOOR", 1, 1, (args) => ({
 register("SQRT", 1, 1, (args) => {
   const value = expectNumber(args[0]!);
   if (value < 0)
-    throw new Error("SQRT: cannot take the square root of a negative number");
+    throw new LispEvalError(
+      "type-error",
+      null,
+      "SQRT: cannot take the square root of a negative number",
+    );
   return { kind: "number", value: Math.sqrt(value) };
 });
