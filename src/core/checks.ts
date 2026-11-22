@@ -38,6 +38,10 @@ function checkFormSingle(list: ListNode, diagnostics: Diagnostic[]): void {
     case "LET*":
       checkLet(list, diagnostics);
       return;
+    case "LABELS":
+    case "FLET":
+      checkLocalFunctions(list, diagnostics);
+      return;
     default:
       return;
   }
@@ -91,6 +95,51 @@ function checkLet(list: ListNode, diagnostics: Diagnostic[]): void {
         bindingsNode?.start ?? list.start,
       ),
     );
+  }
+}
+
+function checkLocalFunctions(list: ListNode, diagnostics: Diagnostic[]): void {
+  const definitionsNode = list.children[1];
+  if (definitionsNode === undefined || !isListNode(definitionsNode)) {
+    diagnostics.push(
+      shapeDiagnostic(
+        "local-definitions",
+        "This form needs a list of local function definitions here.",
+        definitionsNode?.start ?? list.start,
+      ),
+    );
+    return;
+  }
+
+  for (const definitionNode of definitionsNode.children) {
+    if (!isListNode(definitionNode)) {
+      diagnostics.push(
+        shapeDiagnostic(
+          "local-definition",
+          "Each local function needs a name symbol and an argument list.",
+          definitionNode.start,
+        ),
+      );
+      continue;
+    }
+
+    const nameNode = definitionNode.children[0];
+    const paramsNode = definitionNode.children[1];
+
+    if (
+      nameNode === undefined ||
+      !isSymbolNode(nameNode) ||
+      paramsNode === undefined ||
+      !isListNode(paramsNode)
+    ) {
+      diagnostics.push(
+        shapeDiagnostic(
+          "local-definition",
+          "Each local function needs a name symbol and an argument list.",
+          definitionNode.start,
+        ),
+      );
+    }
   }
 }
 

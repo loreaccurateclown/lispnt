@@ -161,6 +161,18 @@ function evaluateInner(node: AstNode, env: Env): LispValue {
           );
         return astToValue(target);
       }
+      case "FUNCTION": {
+        const target = node.children[1];
+        if (target === undefined)
+          throw new LispEvalError(
+            "malformed-form",
+            node.start,
+            "function needs a name or a lambda",
+          );
+        // (function f) is #'f, and (function (lambda ...)) evaluates the lambda
+        if (target.kind === "atom") return functionByName(target, env);
+        return evaluate(target, env);
+      }
       case "PROGN":
         return evaluateBody(node.children.slice(1), env); // slice(1): drop "progn", keep the body forms
       case "SETF":
@@ -704,7 +716,6 @@ function evalDefun(form: ListNode, env: Env): LispValue {
 
   const params = parameterNames(paramsNode, form);
 
-  //placeholder until 3.3
   define(env, name, {
     kind: "function",
     name,

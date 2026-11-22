@@ -876,3 +876,10 @@ test("keeps plain quotes distinguishable from function quotes", () => {
   assert.equal(quoted.quoteKind, "'");
   assert.equal(functionQuoted.quoteKind, "#'");
 });
+
+test("rejects a function quote with nothing to quote", () => {
+  const error = expectReaderError("#'");
+
+  assert.equal(error.code, "unexpected-eof");
+  assert.deepEqual(error.position, { line: 1, column: 3, offset: 2 });
+});

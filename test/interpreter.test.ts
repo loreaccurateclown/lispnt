@@ -731,3 +731,18 @@ test("does not let an flet definition call itself", () => {
 test("does not leak flet definitions", () => {
   assert.throws(() => run("(progn (flet ((f (x) x)) (f 1)) (f 1))"));
 });
+
+test("calls a function through the function special form", () => {
+  assert.deepEqual(run("(progn (defun f (x) x) (funcall (function f) 3))"), num(3));
+});
+
+test("evaluates a lambda inside the function special form", () => {
+  assert.deepEqual(
+    run("(funcall (function (lambda (x) (* x 2))) 5)"),
+    num(10),
+  );
+});
+
+test("rejects a function form with nothing in it", () => {
+  assert.throws(() => run("(function)"));
+});

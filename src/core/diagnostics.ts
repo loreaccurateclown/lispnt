@@ -12,7 +12,9 @@ export type ShapeCode =
   | "defun-name"
   | "defun-arglist"
   | "lambda-arglist"
-  | "let-bindings";
+  | "let-bindings"
+  | "local-definitions"
+  | "local-definition";
 
 export type DiagnosticCode = ReaderErrorCode | ShapeCode | EvalErrorCode;
 

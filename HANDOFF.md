@@ -1,0 +1,120 @@
+# Lispnt — handoff
+
+Read this first in a new session. It records state, decisions, and working
+conventions so nothing has to be re-derived.
+
+## What this is
+
+A read-only diagnostic path for Common Lisp (SBCL), aimed at learners, as a
+VS Code extension that sits alongside OLIVE/SBCL. It parses the open file with
+its own TypeScript s-expression reader and never evaluates anything in a live
+Lisp image.
+
+## Status
+
+- **M1 reader — complete.** M2 analyzer — complete. M3 interpreter — complete.
+- 223 tests: 62 reader, 42 analyze, 119 interpreter (`npm test`).
+- 38 real `.lisp` files across `lisp_test_files/` and the CPS305 corpus produce
+  **zero diagnostics**.
+- Not started: M4 value tracking (next), M5 recursion trace, M6 extension glue.
+- Optional last: M7 Prettier-style Lisp formatter; a benchmark pass.
+
+## Repo and toolchain
+
+- TypeScript 7.0.2 pinned in `devDependencies`; a global 7.0.2 also exists.
+- Build with `npm run build`, check with `npm run check`, test with `npm test`
+  (builds, then runs each suite file explicitly — `node --test <dir>` fails in
+  this sandbox because it spawns children).
+- `dist/test/*.js` is a copy of `test/*.ts`; add new suites to the `test`
+  script in `package.json`.
+- No git commits without explicit permission, each time.
+
+## Layout
+
+| file | role |
+|---|---|
+| `src/core/reader.ts` | cursor factory, `parse`/`parseAll`/`next`, AST types |
+| `src/core/errors.ts` | `ReaderError`, `LispEvalError`, code unions |
+| `src/core/diagnostics.ts` | `Diagnostic`, message tables, error→diagnostic |
+| `src/core/checks.ts` | AST shape checks (`defun`, `lambda`, `let`, `labels`, `flet`) |
+| `src/core/analyze.ts` | entry point: parse → shape checks → evaluate uncovered forms |
+| `src/core/values.ts` | `LispValue` union, `NIL`, `Env`, `Place`, `intern` |
+| `src/core/builtins.ts` | builtin table and `applyBuiltIn` |
+| `src/core/interpreter.ts` | `evaluate`, special forms, `callValue`, observer hooks |
+| `src/core/standard-symbols.ts` | ANSI names we do not implement (silently skipped) |
+
+Layering: `values → builtins → interpreter → analyze`. `builtins.ts` must not
+import `interpreter.ts`; that is why `APPLY`/`FUNCALL` are registered in
+`interpreter.ts` where `callValue` lives.
+
+## Conventions that matter
+
+**Outlines.** `Changes` is a map only (files, order, decisions needed). The
+**pseudocode is the complete implementation spec** — exports shown, modified
+existing declarations shown with the change, imports as a one-line note, one
+scope header per block. Nothing implementation-critical may live only in prose;
+the user codes from the pseudocode almost exclusively.
+
+**Working style.** No code without an explicit instruction. If an instruction
+is vague, stop and ask. No commits or repo-mutating actions without permission
+for that specific action. Prefer short answers; avoid unsolicited justification
+of shapes (explain only when asked).
+
+**Naming.** Prefix exported types/classes (`LispValue`, `ReaderError`,
+`LispEvalError`) — `EvalError` is a JS global and caused a real bug.
+
+## Locked decisions
+
+- Fidelity over desugaring: `'x` stays a `QuoteNode` (with `quoteKind`, `'` or `#'`).
+- `#(…)` vector literals are `ListNode` with `prefix: "#("`, and self-evaluate.
+- Dotted pairs: `ListNode.tail`, two reader codes for bad dots.
+- Symbols interned uppercase (CL reader semantics); `eq` is identity plus
+  number/string value comparison.
+- Keywords self-evaluate (`:initial-element`).
+- `setf` uses a `Place` abstraction (`get`/`set` closures over evaluated
+  targets) covering symbols, `aref`, `car`, `cdr`; `push` is binary; `pop` reads.
+- `labels` closes over its own scope (definitions see each other); `flet` closes
+  over the outer env (no self-recursion by name).
+- Evaluation errors are diagnostics with stable codes; standard-but-unimplemented
+  names are silently skipped (`unsupported-standard`); `(load …)` suppresses
+  `undefined-function`.
+- Step budget: hard 2,000,000 stops `analyze`; plan is a soft internal cap
+  (~200k steps) for the value run, with no user-facing number until laptop
+  testing. Budget hit must read as a **warning**, not an error.
+
+## M4 decisions so far
+
+- Snapshot every form entry, with **copied** binding maps (env mutates as
+  evaluation continues).
+- Cursor → innermost snapshot containing the offset; M4 shows the **most recent**
+  call; M5 owns full frames.
+- Filter bindings with `value.kind === "builtin"` plus `T`/`NIL`.
+- Results carry `unavailable: "evaluation-error" | "budget" | "unparsed" |
+  "truncated"` rather than fake diagnostics.
+- Default to **per-line hints**, with a setting to switch to cursor-position mode.
+- Memory is the real constraint, not time. Snapshot-on-scope-entry (plus
+  mutations) is a possible optimization; decide by measuring the simple version
+  against the cap.
+
+## Next task — 4.1 `printValue`
+
+New `src/core/print.ts`, `test/print.test.ts`, add the suite to the `test` script.
+
+```
+export interface PrintOptions { maxElements?: number; maxDepth?: number }
+export function printValue(value: LispValue, options?: PrintOptions): string
+```
+
+Rendering: `42`, `"hi"` (with `\"` and `\\` escaped), `FOO`, `NIL`, `T`,
+`(1 2 3)`, `(1 . 2)`, `#(1 2)`, `#<builtin CAR>`, `#<function F>`.
+Defaults: 8 elements per sequence, depth 3, `...` when truncated.
+**Conses are mutable, so cycles are possible** — track visited cells and print
+`...` instead of recursing.
+
+## Open items
+
+- Unimplemented forms, all in `standard-symbols.ts`: `loop`, `do`, `case`,
+  `defstruct`, `handler-case`, multiple values, hash tables, `#+`/`#-`,
+  backquote/unquote.
+- `checkForms` could validate `lambda` bodies; today it checks arglists only.
+- Benchmark pass over the corpus, to put numbers on parse/evaluate cost.

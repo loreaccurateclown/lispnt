@@ -264,3 +264,34 @@ test("still reports undefined functions when nothing is loaded", () => {
   assert.equal(diagnostics.length, 1);
   assert.equal(diagnostics[0]?.code, "undefined-function");
 });
+
+//LLM-written tests
+test("reports a labels form without a definitions list", () => {
+  const diagnostics = analyze("(labels 1 2)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "local-definitions");
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 9, offset: 8 });
+});
+
+test("reports a labels definition whose name is not a symbol", () => {
+  const diagnostics = analyze("(labels ((1 (x) x)) 2)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "local-definition");
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 10, offset: 9 });
+});
+
+test("reports a labels definition without an argument list", () => {
+  const diagnostics = analyze("(labels ((f x) 2))");
+
+  assert.equal(diagnostics.length, 2);
+  assert.deepEqual(
+    diagnostics.map((diagnostic) => diagnostic.code),
+    ["local-definition", "local-definition"],
+  );
+});
+
+test("accepts a well formed labels form", () => {
+  assert.deepEqual(analyze("(labels ((f (x) x)) (f 1))"), []);
+});

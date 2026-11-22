@@ -29,7 +29,7 @@ export const STANDARD_SYMBOLS: ReadonlySet<string> = new Set([
   "DEFMETHOD", "DEFGENERIC", "DEFMACRO", "DEFTYPE", "DEFVAR", "DEFCONSTANT",
 
   // values, operators, types
-  "VALUES", "VALUES-LIST", "FUNCALL", "APPLY", "FUNCTION", "EQ", "EQL",
+  "VALUES", "VALUES-LIST", "FUNCALL", "APPLY", "EQ", "EQL",
   "EQUALP", "TYPEP", "TYPE-OF", "TYPE-ERROR", "COERCE", "IDENTITY", "CONSTANTLY",
 
   // numbers
