@@ -58,7 +58,7 @@ export function createEnv(parent: Env | null): Env {
 }
 
 let steps = 0;
-const STEP_LIMIT = 1_000_000;
+const STEP_LIMIT = 2_000_000;
 
 export function resetEvaluationBudget(): void {
   steps = 0;

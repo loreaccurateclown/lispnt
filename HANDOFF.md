@@ -14,10 +14,17 @@ Lisp image.
 
 - **M1 reader — complete.** M2 analyzer — complete. M3 interpreter — complete.
 - 223 tests: 62 reader, 42 analyze, 119 interpreter (`npm test`).
-- 38 real `.lisp` files across `lisp_test_files/` and the CPS305 corpus produce
-  **zero diagnostics**.
-- Not started: M4 value tracking (next), M5 recursion trace, M6 extension glue.
+- 38 real `.lisp` files produce **zero diagnostics**: 4 in `lisp_test_files/`,
+  34 in `G:\My Drive\Labs\CPS305` (outside the repo). To re-check after a build,
+  walk both trees for `*.lisp`/`*.lsp`, `readFileSync` each and pass it to
+  `analyze` from `dist/src/core/analyze.js`, count the files that report
+  anything. Reads from `G:` work under this sandbox; nothing is written. No
+  script for this is committed.
+- In progress: M4 value tracking — design settled, next is 4.1 `printValue`.
+  Not started: M5 recursion trace, M6 extension glue.
 - Optional last: M7 Prettier-style Lisp formatter; a benchmark pass.
+- Long-form plan and milestone history: `ROADMAP.md`. Keep its test counts in
+  step with this file.
 
 ## Repo and toolchain
 
@@ -27,6 +34,8 @@ Lisp image.
   this sandbox because it spawns children).
 - `dist/test/*.js` is a copy of `test/*.ts`; add new suites to the `test`
   script in `package.json`.
+- Tests use `node:test` with `node:assert/strict`. Blocks written by the agent
+  are marked `//LLM-written tests`; new suites follow both.
 - No git commits without explicit permission, each time.
 
 ## Layout
@@ -47,6 +56,9 @@ Layering: `values → builtins → interpreter → analyze`. `builtins.ts` must 
 import `interpreter.ts`; that is why `APPLY`/`FUNCALL` are registered in
 `interpreter.ts` where `callValue` lives.
 
+`userdocs/` is the user's own notes on Lisp and CL — not project material. Leave
+it alone unless asked.
+
 ## Conventions that matter
 
 **Outlines.** `Changes` is a map only (files, order, decisions needed). The
@@ -61,7 +73,10 @@ for that specific action. Prefer short answers; avoid unsolicited justification
 of shapes (explain only when asked).
 
 **Naming.** Prefix exported types/classes (`LispValue`, `ReaderError`,
-`LispEvalError`) — `EvalError` is a JS global and caused a real bug.
+`LispEvalError`) — JS/DOM globals include `EvalError`, `Node`, `Element`,
+`Event`, `Text`, `Range`, `File`, and `EvalError` caused a real bug. TypeScript
+7's npm package ships no `lib.*.d.ts`, so the global list cannot be grepped
+locally: just always prefix.
 
 ## Locked decisions
 
@@ -78,9 +93,15 @@ of shapes (explain only when asked).
 - Evaluation errors are diagnostics with stable codes; standard-but-unimplemented
   names are silently skipped (`unsupported-standard`); `(load …)` suppresses
   `undefined-function`.
-- Step budget: hard 2,000,000 stops `analyze`; plan is a soft internal cap
-  (~200k steps) for the value run, with no user-facing number until laptop
-  testing. Budget hit must read as a **warning**, not an error.
+- Step budget: hard 2,000,000 (`STEP_LIMIT` in `interpreter.ts`) stops
+  `analyze`; plan is a soft internal cap (~200k steps) for the value run, with
+  no user-facing number until laptop testing. Budget hit must read as a
+  **warning**, not an error. The counter is module-level and only `analyze`
+  resets it, so a direct `evaluate` caller (M4's value run) must decide for
+  itself whether to reset.
+- Budget wording: "1,000+ iterations" for a loop, "1,000+ calls, N levels deep"
+  for recursion, "1,000+ evaluations" otherwise. "Recursions" is not the count
+  noun.
 
 ## M4 decisions so far
 
