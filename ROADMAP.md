@@ -3,8 +3,8 @@
 Read-only diagnostic path for Common Lisp (SBCL), alongside OLIVE.
 
 Current state and working conventions live in `HANDOFF.md`; this file is the
-long-form milestone plan. Totals today: 270 tests (62 reader, 42 analyze, 119
-interpreter, 39 print, 8 pipeline).
+long-form milestone plan. Totals today: 300 tests (62 reader, 42 analyze, 125
+interpreter, 39 print, 8 pipeline, 24 bindings).
 
 ## Milestones
 
@@ -15,10 +15,14 @@ interpreter, 39 print, 8 pipeline).
   *Status: complete — the analyze suite, 42 tests. `ReaderError` carries a stable code plus the position of the offending construct; `analyze` returns `Diagnostic[]` with learner-facing messages, recovers past each error via `reader.next()` so a bad form does not hide the rest of the file, and runs AST shape checks (`defun` name/arglist, `lambda` arglist, `let`/`let*` bindings) recursively while skipping quoted data and `#(...)` vectors.*
   *Deferred: diagnostics carry one position, not a range (M6 converts); shape checks do not validate binding entries or arity.*
 - **M3 — Interpreter.** Evaluator over the AST: `defun`, `if`, `cond`, `let`, arithmetic, recursion.
-  *Status: complete — 223 tests (62 reader, 42 analyze, 119 interpreter). Special forms incl. `let*`, `cond`, `when`/`unless`, `progn`, `defun`/`lambda`, `labels`/`flet`, `setq`/`setf` with places, `dolist`/`dotimes`/`return`, `push`/`pop`; forty builtins; arrays; dotted pairs; `#'` function quotes. Evaluation errors surface as diagnostics with codes and positions, a step budget stops runaway code, and an observer exposes form and call events for M4/M5.*
+  *Status: complete — the interpreter suite, 125 tests. Special forms incl. `let*`, `cond`, `when`/`unless`, `progn`, `defun`/`lambda`, `labels`/`flet`, `setq`/`setf` with places, `dolist`/`dotimes`/`return`, `push`/`pop`; forty builtins; arrays; dotted pairs; `#'` function quotes. Evaluation errors surface as diagnostics with codes and positions, a step budget stops runaway code, and an observer exposes form and call events for M4/M5.*
   *Deferred: `loop`/`do`, `case`, `defstruct`, `handler-case`, multiple values, hash tables, `#+`/`#-`, backquote/unquote. All are in the standard-symbols list, so they are silently skipped rather than misreported.*
 - **M4 — Value tracking.** Evaluate to a point, expose symbol values for inline display.
-  *Status: in progress. Design settled — snapshots per form with copied bindings, cursor resolves to the innermost snapshot, builtins plus `T`/`NIL` filtered, `unavailable` codes instead of fake diagnostics, per-line hints by default. 4.1 `printValue` is complete (`src/core/print.ts`, 39 unit tests, 8 pipeline tests); the value run and hint layer are next. Decisions are recorded in `HANDOFF.md`.*
+  *Status: in progress, hint layer paused until M4-STATIC lands. Done: 4.1 `printValue` (`src/core/print.ts`, 39 unit tests, 8 pipeline tests); a per-pass step ceiling under a fixed 2,000,000 backstop; and the value run itself (`src/core/bindings.ts` — `recordBindings`, `snapshotAt`, 18 + 6 tests). Remaining: per-line hint rendering, the setting that switches to cursor mode, and caching a run per document version. Design settled — snapshots per form with copied bindings, cursor resolves to the innermost snapshot (fallback only when the run completed), builtins plus `T`/`NIL` filtered, `unavailable` codes instead of fake diagnostics.*
+- **M4-STATIC — Static checks over the whole file.** Every form checked whether or not anything calls it: the names each scope binds, undefined functions, argument counts, a variable called as a function, unbound variables, and structural checks inside bodies.
+  *Status: not started. Exists because learner code is usually a set of `defun`s loaded and compiled in the SBCL REPL rather than called in the file: 21 of the 37 corpus files with `defun`s call none of them, and 78 of 199 corpus `defun`s are never called. Evaluation only sees code that runs, so those bodies are checked today for nothing but name and arglist shape. This is the project's pre-compile promise — finding the mistake before SBCL's debugger does.*
+  *Planned in three slices: scope model and symbol table; name checks over bodies; structure inside bodies, plus how `analyze` combines static findings with evaluation's.*
+  *Deferred: any knowledge beyond this file and the standard library (unknown names stay at most a warning); unused bindings; type inference.*
 - **M5 — Recursion trace.** Frame enter/exit recording, rendered as a call tree outside the REPL.
 - **M6 — Extension glue.** `activate()`, diagnostics provider, view. The only layer importing `vscode`.
 

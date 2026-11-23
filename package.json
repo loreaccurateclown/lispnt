@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node dist/test/reader.test.js && node dist/test/analyze.test.js && node dist/test/interpreter.test.js && node dist/test/print.test.js && node dist/test/pipeline.test.js && node dist/test/bindings.test.js"
+    "test": "npm run build && node dist/test/reader.test.js && node dist/test/analyze.test.js && node dist/test/interpreter.test.js && node dist/test/print.test.js && node dist/test/pipeline.test.js && node dist/test/bindings.test.js && node dist/test/scopes.test.js"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
