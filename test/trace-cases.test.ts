@@ -13,7 +13,8 @@ function only(cases: TraceCase[]): TraceCase {
 
 function rendered(testCase: TraceCase): string {
   assert.ok(testCase.trace !== null, "expected a trace");
-  return renderTrace(testCase.trace);
+  if (testCase.limit === undefined) return renderTrace(testCase.trace);
+  return renderTrace(testCase.trace, { limit: testCase.limit });
 }
 
 test("finds a case written after the marker", () => {
@@ -28,15 +29,22 @@ test("traces the commented call with its nested calls", () => {
 
   assert.equal(
     rendered(only(cases)),
-    "FACT(4) => 24\n  FACT(3) => 6\n    FACT(2) => 2\n      FACT(1) => 1\n        FACT(0) => 1",
+    [
+      "root: 0: FACT(4) => 24",
+      "  1: FACT(3) => 6",
+      "    2: FACT(2) => 2",
+      "      3: FACT(1) => 1",
+      "        max depth: 4: FACT(0) => 1",
+      "5 calls · max depth: 4 · final value: 24",
+    ].join("\n"),
   );
 });
 
 test("traces the case only, not the file's own top-level calls", () => {
   const cases = traceCases(`${FACT}\n(fact 2)\n;;[trace] (fact 3)`);
 
-  assert.equal(rendered(only(cases)).split("\n").length, 4);
-  assert.match(rendered(only(cases)), /^FACT\(3\) => 6/);
+  assert.equal(rendered(only(cases)).split("\n").length, 5);
+  assert.match(rendered(only(cases)), /^root: 0: FACT\(3\) => 6/);
 });
 
 test("gives each of two markers its own trace", () => {
@@ -45,8 +53,8 @@ test("gives each of two markers its own trace", () => {
   );
 
   assert.equal(cases.length, 2);
-  assert.match(rendered(cases[0]!), /^FACT\(2\) => 2/);
-  assert.match(rendered(cases[1]!), /^FACT\(3\) => 6/);
+  assert.match(rendered(cases[0]!), /^root: 0: FACT\(2\) => 2/);
+  assert.match(rendered(cases[1]!), /^root: 0: FACT\(3\) => 6/);
 });
 
 test("accepts a space inside the brackets and around them", () => {
@@ -103,8 +111,14 @@ test("does not let one case see another's mutation", () => {
   ].join("\n");
   const cases = traceCases(source);
 
-  assert.equal(rendered(cases[0]!), "GET-X() => 99");
-  assert.equal(rendered(cases[1]!), "GET-X() => 1");
+  assert.equal(
+    rendered(cases[0]!),
+    "root: 0: GET-X() => 99\n1 call · max depth: 0 · final value: 99",
+  );
+  assert.equal(
+    rendered(cases[1]!),
+    "root: 0: GET-X() => 1\n1 call · max depth: 0 · final value: 1",
+  );
 });
 
 test("reports a call to a function the file never defines", () => {
@@ -119,4 +133,57 @@ test("still traces when the file itself does not parse", () => {
 
   assert.equal(only(cases).status, "ok");
   assert.equal(only(cases).trace?.failed, "undefined-function");
+});
+
+test("reads a per-level limit from the marker", () => {
+  const cases = traceCases(`;;[trace:2] (fact 4)\n${FACT}`);
+
+  assert.equal(only(cases).status, "ok");
+  assert.equal(only(cases).expression, "(fact 4)");
+  assert.equal(only(cases).limit, 2);
+});
+
+test("reads all from the marker", () => {
+  const cases = traceCases(`;;[trace:all] (fact 4)\n${FACT}`);
+
+  assert.equal(only(cases).limit, "all");
+});
+
+test("leaves the limit off a marker that names none", () => {
+  const cases = traceCases(`;;[trace] (fact 4)\n${FACT}`);
+
+  assert.equal(only(cases).limit, undefined);
+});
+
+test("tolerates spaces and case inside a limited marker", () => {
+  const cases = traceCases(`;; [ TRACE : 3 ] (fact 4)\n${FACT}`);
+
+  assert.equal(only(cases).status, "ok");
+  assert.equal(only(cases).limit, 3);
+});
+
+test("marks a limit it cannot read as unreadable", () => {
+  const cases = traceCases(`;;[trace:x] (fact 4)\n${FACT}`);
+
+  assert.equal(only(cases).status, "unreadable");
+  assert.equal(only(cases).trace, null);
+});
+
+test("renders a case at the limit the marker asked for", () => {
+  const source = [
+    "(defun f (x) x)",
+    "(defun top () (f 1) (f 2) (f 3) (f 4))",
+    ";;[trace:1] (top)",
+  ].join("\n");
+
+  assert.equal(
+    rendered(only(traceCases(source))),
+    [
+      "root: 0: TOP() => 4",
+      "  max depth: 1: F(1) => 1",
+      "  … 2 more calls hidden",
+      "  max depth: 1: F(4) => 4",
+      "5 calls · max depth: 1 · final value: 4",
+    ].join("\n"),
+  );
 });

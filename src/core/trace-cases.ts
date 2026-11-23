@@ -11,10 +11,14 @@ export interface TraceCase {
   readonly expression: string;
   readonly status: TraceCaseStatus;
   readonly trace: TraceResult | null;
+  // Calls per level the marker's ;;trace:N asks the renderer to show.
+  readonly limit?: number | "all";
 }
 
-// ;;[trace] (fact 4)   — line comment, bracketed marker, then one form.
-const MARKER = /^\s*;+\s*\[\s*trace\s*\]\s*(.*)$/i;
+// ;;[trace] (fact 4)        — line comment, bracketed marker, then one form.
+// ;;[trace:3] (fact 4)      — same, showing at most three calls per level.
+// ;;[trace:all] (fact 4)    — same, showing every recorded call.
+const MARKER = /^\s*;+\s*\[\s*trace\s*(?::\s*([A-Za-z0-9]+))?\s*\]\s*(.*)$/i;
 
 export function traceCases(source: string): TraceCase[] {
   const cases: TraceCase[] = [];
@@ -26,20 +30,36 @@ export function traceCases(source: string): TraceCase[] {
     const match = MARKER.exec(lines[index] ?? "");
     if (match === null) continue;
 
-    const expression = (match[1] ?? "").trim();
+    const expression = (match[2] ?? "").trim();
     const line = index + 1;
+    const limit = readLimit(match[1]);
+
+    // A limit we cannot read makes the marker unreadable, the same as text
+    // after it that is not a form.
+    if (limit === "bad") {
+      cases.push({ line, expression, status: "unreadable", trace: null });
+      continue;
+    }
+
+    const add = (status: TraceCaseStatus, trace: TraceResult | null): void => {
+      if (limit === undefined) {
+        cases.push({ line, expression, status, trace });
+        return;
+      }
+      cases.push({ line, expression, status, trace, limit });
+    };
 
     let forms: AstNode[];
     try {
       forms = parseAll(expression);
     } catch {
-      cases.push({ line, expression, status: "unreadable", trace: null });
+      add("unreadable", null);
       continue;
     }
 
     const form = forms[0];
     if (form === undefined) {
-      cases.push({ line, expression, status: "unreadable", trace: null });
+      add("unreadable", null);
       continue;
     }
 
@@ -50,10 +70,17 @@ export function traceCases(source: string): TraceCase[] {
     const env = createEnv(null);
     if (fileForms !== null) loadInto(env, fileForms);
 
-    cases.push({ line, expression, status: "ok", trace: traceFormIn(form, env) });
+    add("ok", traceFormIn(form, env));
   }
 
   return cases;
+}
+
+function readLimit(raw: string | undefined): number | "all" | "bad" | undefined {
+  if (raw === undefined) return undefined;
+  if (/^all$/i.test(raw)) return "all";
+  if (/^\d+$/.test(raw)) return Number(raw);
+  return "bad";
 }
 
 function readFileForms(source: string): AstNode[] | null {

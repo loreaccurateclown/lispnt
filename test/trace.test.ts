@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renderTrace, traceCalls, type TraceFrame } from "../src/core/trace";
+import {
+  EXPLAIN_TRACE,
+  renderTrace,
+  traceCalls,
+  type TraceFrame,
+} from "../src/core/trace";
 
 //LLM-written tests
 function depth(frame: TraceFrame): number {
@@ -33,6 +38,18 @@ test("records the printed result at exit", () => {
   const result = traceCalls("(defun f () (list 1 2)) (f)");
 
   assert.equal(result.frames[0]?.result, "(1 2)");
+});
+
+test("records the value the run returned", () => {
+  const result = traceCalls("(defun f (x) x) (f 1) (f 2)");
+
+  assert.equal(result.finalValue, "2");
+});
+
+test("records no final value for a run that failed", () => {
+  const result = traceCalls("(defun g () (car 1)) (defun f () (g)) (f)");
+
+  assert.equal(result.finalValue, undefined);
 });
 
 test("records sibling calls under separate roots", () => {
@@ -114,7 +131,10 @@ test("nests a recursive call", () => {
 });
 
 test("renders a single frame with its result", () => {
-  assert.equal(renderTrace(traceCalls("(defun f (x) (* x 2)) (f 5)")), "F(5) => 10");
+  assert.equal(
+    renderTrace(traceCalls("(defun f (x) (* x 2)) (f 5)")),
+    "root: 0: F(5) => 10\n1 call · max depth: 0 · final value: 10",
+  );
 });
 
 test("indents a child by two spaces", () => {
@@ -122,7 +142,11 @@ test("indents a child by two spaces", () => {
     traceCalls("(defun g (x) x) (defun f (x) (g x)) (f 5)"),
   );
 
-  assert.equal(text, "F(5) => 5\n  G(5) => 5");
+  assert.equal(
+    text,
+    "root: 0: F(5) => 5\n  max depth: 1: G(5) => 5\n" +
+      "2 calls · max depth: 1 · final value: 5",
+  );
 });
 
 test("joins several arguments with a comma", () => {
@@ -130,7 +154,10 @@ test("joins several arguments with a comma", () => {
     traceCalls("(defun add (a b) (+ a b)) (add 1 2)"),
   );
 
-  assert.equal(text, "ADD(1, 2) => 3");
+  assert.equal(
+    text,
+    "root: 0: ADD(1, 2) => 3\n1 call · max depth: 0 · final value: 3",
+  );
 });
 
 test("marks the failing frame with its error code", () => {
@@ -138,7 +165,11 @@ test("marks the failing frame with its error code", () => {
     traceCalls("(defun g () (car 1)) (defun f () (g)) (f)"),
   );
 
-  assert.equal(text, "F()\n  G() !! type-error\n… stopped: type-error");
+  assert.equal(
+    text,
+    "root: 0: F()\n  max depth: 1: G() !! type-error\n" +
+      "2 calls · max depth: 1\n… stopped: type-error",
+  );
 });
 
 test("shows the truncation footer", () => {
@@ -163,5 +194,171 @@ test("renders nothing for an empty trace", () => {
 test("renders several roots on consecutive lines", () => {
   const text = renderTrace(traceCalls("(defun f (x) x) (f 1) (f 2)"));
 
-  assert.equal(text, "F(1) => 1\nF(2) => 2");
+  assert.equal(
+    text,
+    "root: 0: F(1) => 1\nroot: 0: F(2) => 2\n" +
+      "2 calls · max depth: 0 · final value: 2",
+  );
+});
+
+test("labels the root line", () => {
+  const text = renderTrace(traceCalls("(defun f (x) x) (f 5)"));
+
+  assert.match(text, /^root: 0: F\(5\)/);
+});
+
+test("labels every entry line at the deepest level", () => {
+  const text = renderTrace(
+    traceCalls("(defun f (x) x) (defun top () (f 1) (f 2) (f 3)) (top)"),
+  );
+
+  assert.equal(text.match(/max depth: 1: /g)?.length, 3);
+});
+
+test("leaves the levels between the root and the deepest one bare", () => {
+  const text = renderTrace(
+    traceCalls(
+      "(defun fact (n) (if (= n 0) 1 (* n (fact (- n 1))))) (fact 3)",
+    ),
+  );
+
+  assert.match(text, /\n  1: FACT\(2\) => 2\n/);
+  assert.match(text, /\n {6}max depth: 3: FACT\(0\) => 1\n/);
+});
+
+test("counts the calls, the depth and the value in the summary", () => {
+  const text = renderTrace(
+    traceCalls(
+      "(defun fact (n) (if (= n 0) 1 (* n (fact (- n 1))))) (fact 3)",
+    ),
+  );
+
+  assert.match(text, /\n4 calls · max depth: 3 · final value: 6$/);
+});
+
+test("renders a recursive trace label by label", () => {
+  const text = renderTrace(
+    traceCalls(
+      "(defun fib (n) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2))))) (fib 3)",
+    ),
+  );
+
+  assert.equal(
+    text,
+    [
+      "root: 0: FIB(3) => 2",
+      "  1: FIB(2) => 1",
+      "    max depth: 2: FIB(1) => 1",
+      "    max depth: 2: FIB(0) => 0",
+      "  1: FIB(1) => 1",
+      "5 calls · max depth: 2 · final value: 2",
+    ].join("\n"),
+  );
+});
+
+test("marks a depth that a cap cut short", () => {
+  const text = renderTrace(
+    traceCalls("(defun r (n) (if (= n 0) 0 (r (- n 1)))) (r 90)"),
+  );
+
+  assert.match(text, /max depth: 63 \(limit reached\): R\(27\)/);
+  assert.match(text, /64 calls · max depth: 63 \(limit reached\)/);
+});
+
+test("hides the middle of a wide level and keeps the last entry", () => {
+  const text = renderTrace(
+    traceCalls("(defun f (x) x) (defun top () (f 1) (f 2) (f 3) (f 4)) (top)"),
+    { limit: 1 },
+  );
+
+  assert.equal(
+    text,
+    [
+      "root: 0: TOP() => 4",
+      "  max depth: 1: F(1) => 1",
+      "  … 2 more calls hidden",
+      "  max depth: 1: F(4) => 4",
+      "5 calls · max depth: 1 · final value: 4",
+    ].join("\n"),
+  );
+});
+
+test("keeps the first and last entry when a level is wider than the limit", () => {
+  const text = renderTrace(
+    traceCalls("(defun f (x) x) (defun top () (f 1) (f 2) (f 3) (f 4)) (top)"),
+    { limit: 2 },
+  );
+
+  assert.match(text, /F\(1\) => 1\n  max depth: 1: F\(2\) => 2\n  … 1 more call hidden/);
+  assert.match(text, /F\(4\) => 4/);
+});
+
+test("shows a level narrower than the limit in full", () => {
+  const text = renderTrace(
+    traceCalls("(defun f (x) x) (defun top () (f 1) (f 2)) (top)"),
+    { limit: 2 },
+  );
+
+  assert.doesNotMatch(text, /hidden/);
+});
+
+test("shows every call with all", () => {
+  const text = renderTrace(
+    traceCalls("(defun f (x) x) (defun top () (f 1) (f 2) (f 3) (f 4)) (top)"),
+    { limit: "all" },
+  );
+
+  assert.doesNotMatch(text, /hidden/);
+  assert.equal(text.match(/max depth: 1: /g)?.length, 4);
+});
+
+test("hides nothing at the default limit for a small trace", () => {
+  const text = renderTrace(
+    traceCalls("(defun f (x) x) (defun top () (f 1) (f 2)) (top)"),
+  );
+
+  assert.doesNotMatch(text, /hidden/);
+});
+
+test("treats a limit below one as one", () => {
+  const text = renderTrace(
+    traceCalls("(defun f (x) x) (defun top () (f 1) (f 2) (f 3)) (top)"),
+    { limit: 0 },
+  );
+
+  assert.match(text, /F\(1\) => 1\n  … 1 more call hidden\n  max depth: 1: F\(3\) => 3/);
+});
+
+test("leaves the explanation out by default", () => {
+  const text = renderTrace(traceCalls("(defun f (x) x) (f 5)"));
+
+  assert.ok(!text.includes(EXPLAIN_TRACE));
+});
+
+test("appends the explanation after a blank line when asked", () => {
+  const text = renderTrace(traceCalls("(defun f (x) x) (f 5)"), {
+    explain: true,
+  });
+
+  assert.equal(
+    text,
+    "root: 0: F(5) => 5\n1 call · max depth: 0 · final value: 5\n\n" +
+      EXPLAIN_TRACE,
+  );
+});
+
+test("explains an empty trace without a summary to explain", () => {
+  assert.equal(
+    renderTrace(traceCalls("(car (list 1 2))"), { explain: true }),
+    EXPLAIN_TRACE,
+  );
+});
+
+test("explains a failed trace below its footer", () => {
+  const text = renderTrace(
+    traceCalls("(defun g () (car 1)) (defun f () (g)) (f)"),
+    { explain: true },
+  );
+
+  assert.match(text, /… stopped: type-error\n\nThis is a summary/);
 });
