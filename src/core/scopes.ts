@@ -10,11 +10,16 @@ export type BindingKind =
   | "builtin"
   | "standard";
 
+export interface Arity {
+  readonly min: number;
+  readonly max: number | null;
+}
+
 export interface Binding {
   readonly name: string;
   readonly kind: BindingKind;
   readonly position?: Position;
-  readonly parameterCount?: number;
+  readonly arity?: Arity;
 }
 
 export interface Scope {
@@ -26,18 +31,30 @@ export interface Scope {
 export interface FileSymbols {
   readonly variables: Map<string, Binding>;
   readonly functions: Map<string, Binding>;
+  readonly definitionCounts: Map<string, number>;
   readonly loadsAnotherFile: boolean;
+  readonly definesStructures: boolean;
 }
 
 export function collectSymbols(forms: AstNode[]): FileSymbols {
   const variables = new Map<string, Binding>();
   const functions = new Map<string, Binding>();
+  const definitionCounts = new Map<string, number>();
+  const flags = { structures: false };
 
   const loadsAnotherFile = forms.some((form) => headName(form) === "LOAD");
 
-  for (const form of forms) collectFromNode(form, variables, functions);
+  for (const form of forms) {
+    collectFromNode(form, variables, functions, definitionCounts, flags);
+  }
 
-  return { variables, functions, loadsAnotherFile };
+  return {
+    variables,
+    functions,
+    definitionCounts,
+    loadsAnotherFile,
+    definesStructures: flags.structures,
+  };
 }
 
 export function createFileScope(symbols: FileSymbols): Scope {
@@ -112,8 +129,15 @@ export function walkWithScopes(
         visitDefinition(node, current);
         return;
       default: {
-        // A head symbol is a function position, not a variable reference.
         const head = node.children[0];
+        const headWord = head !== undefined ? symbolWord(head) : undefined;
+
+        // Standard forms whose syntax we do not model: descending would report
+        // their binding names and clause keywords as ordinary code. Their
+        // contents go unchecked until each is decoded.
+        if (headWord !== undefined && OPAQUE_FORMS.has(headWord)) return;
+
+        // A head symbol is a function position, not a variable reference.
         const first = head !== undefined && isSymbolNode(head) ? 1 : 0;
 
         for (const child of node.children.slice(first)) visit(child, current);
@@ -181,7 +205,7 @@ export function walkWithScopes(
         name: symbolText(nameNode),
         kind: "function",
         position: nameNode.start,
-        parameterCount: parameterNodes(definition.children[1]).length,
+        arity: parseArity(definition.children[1]),
       });
     }
 
@@ -205,11 +229,12 @@ export function walkWithScopes(
     if (specNode !== undefined && specNode.kind === "list") {
       const [counterNode, listNode, resultNode] = specNode.children;
 
-      // The iterated form and the result form run in the enclosing scope.
-      if (listNode !== undefined) visit(listNode, current);
-      if (resultNode !== undefined) visit(resultNode, current);
-
       bindVariable(inner, counterNode, "local");
+
+      // The iterated form runs in the enclosing scope; the result form runs
+      // with the counter still bound, as in Common Lisp.
+      if (listNode !== undefined) visit(listNode, current);
+      if (resultNode !== undefined) visit(resultNode, inner);
     }
 
     for (const form of node.children.slice(2)) visit(form, inner);
@@ -241,6 +266,7 @@ export function walkWithScopes(
   function visitLoopForm(node: ListNode, current: Scope): void {
     const inner = childScope(current);
     const tokens = node.children.slice(1);
+    let codeFollows = false;
 
     for (let index = 0; index < tokens.length; index += 1) {
       const token = tokens[index];
@@ -248,7 +274,13 @@ export function walkWithScopes(
 
       const word = symbolWord(token);
 
-      if (word === "FOR" || word === "AS" || word === "WITH" || word === "AND") {
+      if (
+        word === "FOR" ||
+        word === "AS" ||
+        word === "WITH" ||
+        word === "AND" ||
+        word === "INTO"
+      ) {
         const candidate = tokens[index + 1];
         const candidateWord =
           candidate !== undefined ? symbolWord(candidate) : undefined;
@@ -262,7 +294,17 @@ export function walkWithScopes(
         }
       }
 
-      if (token.kind === "list") visit(token, inner);
+      if (token.kind === "list") {
+        if (codeFollows) visit(token, inner);
+        // Not code: a clause list such as (hash-value v). Its symbols are the
+        // names the clause binds, so bind them rather than walking them.
+        else bindSymbols(inner, token);
+
+        codeFollows = false;
+        continue;
+      }
+
+      codeFollows = word !== undefined && LOOP_CODE_KEYWORDS.has(word);
     }
   }
 
@@ -299,6 +341,8 @@ function collectFromNode(
   node: AstNode,
   variables: Map<string, Binding>,
   functions: Map<string, Binding>,
+  definitionCounts: Map<string, number>,
+  flags: { structures: boolean },
 ): void {
   if (node.kind === "quote") return;
   if (node.kind === "atom") return;
@@ -306,15 +350,19 @@ function collectFromNode(
 
   const head = headName(node);
 
+  if (head === "DEFSTRUCT") flags.structures = true;
+
   if (head === "DEFUN") {
     const nameNode = node.children[1];
     if (nameNode !== undefined && isSymbolNode(nameNode)) {
-      functions.set(symbolText(nameNode), {
-        name: symbolText(nameNode),
+      const name = symbolText(nameNode);
+      functions.set(name, {
+        name,
         kind: "function",
         position: nameNode.start,
-        parameterCount: parameterNodes(node.children[2]).length,
+        arity: parseArity(node.children[2]),
       });
+      definitionCounts.set(name, (definitionCounts.get(name) ?? 0) + 1);
     }
   }
 
@@ -333,8 +381,12 @@ function collectFromNode(
     }
   }
 
-  for (const child of node.children) collectFromNode(child, variables, functions);
-  if (node.tail !== undefined) collectFromNode(node.tail, variables, functions);
+  for (const child of node.children) {
+    collectFromNode(child, variables, functions, definitionCounts, flags);
+  }
+  if (node.tail !== undefined) {
+    collectFromNode(node.tail, variables, functions, definitionCounts, flags);
+  }
 }
 
 function childScope(parent: Scope): Scope {
@@ -356,6 +408,10 @@ function bindVariable(scope: Scope, node: AstNode | undefined, kind: "local" | "
   });
 }
 
+function bindSymbols(scope: Scope, node: ListNode): void {
+  for (const child of node.children) bindVariable(scope, child, "local");
+}
+
 function bindingPairs(bindingsNode: ListNode): Array<[AstNode | undefined, AstNode | undefined]> {
   const pairs: Array<[AstNode | undefined, AstNode | undefined]> = [];
 
@@ -375,6 +431,46 @@ function parameterNodes(node: AstNode | undefined): AstNode[] {
   return node.children;
 }
 
+// A subset of the Common Lisp lambda list: required names, then &optional,
+// &rest / &body, &key and &aux. Markers do not count as arguments.
+function parseArity(node: AstNode | undefined): Arity {
+  const parameters = parameterNodes(node);
+
+  let required = 0;
+  let optional = 0;
+  let unbounded = false;
+  let mode: "required" | "optional" | "key" | "aux" | "rest" = "required";
+
+  for (const parameter of parameters) {
+    const word = symbolWord(parameter);
+
+    switch (word) {
+      case "&OPTIONAL":
+        mode = "optional";
+        continue;
+      case "&REST":
+      case "&BODY":
+        mode = "rest";
+        unbounded = true;
+        continue;
+      case "&KEY":
+        mode = "key";
+        unbounded = true;
+        continue;
+      case "&AUX":
+        mode = "aux";
+        continue;
+      default:
+        break;
+    }
+
+    if (mode === "required") required += 1;
+    if (mode === "optional") optional += 1;
+  }
+
+  return { min: required, max: unbounded ? null : required + optional };
+}
+
 function headName(node: AstNode): string | undefined {
   if (node.kind !== "list") return undefined;
   if (node.prefix !== undefined) return undefined;
@@ -388,7 +484,7 @@ function isSymbolNode(node: AstNode | undefined): boolean {
   return node !== undefined && node.kind === "atom" && node.atomType === "symbol";
 }
 
-function symbolWord(node: AstNode): string | undefined {
+export function symbolWord(node: AstNode): string | undefined {
   return isSymbolNode(node) ? symbolText(node) : undefined;
 }
 
@@ -431,4 +527,79 @@ const LOOP_KEYWORDS: ReadonlySet<string> = new Set([
   "FINALLY",
   "RETURN",
   "INTO",
+]);
+
+// Keywords after which a list token in a loop form is an expression rather
+// than a clause list such as (hash-value v).
+const LOOP_CODE_KEYWORDS: ReadonlySet<string> = new Set([
+  "DO",
+  "DOING",
+  "COLLECT",
+  "COLLECTING",
+  "SUM",
+  "SUMMING",
+  "COUNT",
+  "COUNTING",
+  "MAXIMIZE",
+  "MAXIMIZING",
+  "MINIMIZE",
+  "MINIMIZING",
+  "APPEND",
+  "APPENDING",
+  "NCONC",
+  "FINALLY",
+  "INITIALLY",
+  "WHILE",
+  "UNTIL",
+  "REPEAT",
+  "RETURN",
+  "IF",
+  "WHEN",
+  "UNLESS",
+  "ELSE",
+  "IN",
+  "ON",
+  "ACROSS",
+  "FROM",
+  "TO",
+  "BELOW",
+  "ABOVE",
+  "BY",
+  "=",
+  "THEN",
+]);
+
+// Standard forms whose syntax we do not model. Their binding names and clause
+// keywords would otherwise be read as ordinary code, so the walk stops here.
+// Each entry is a candidate for decoding later; until then its body is unchecked.
+export const OPAQUE_FORMS: ReadonlySet<string> = new Set([
+  "DO",
+  "DO*",
+  "CASE",
+  "ECASE",
+  "CCASE",
+  "TYPECASE",
+  "ETYPECASE",
+  "DEFSTRUCT",
+  "DEFCLASS",
+  "DEFGENERIC",
+  "DEFMETHOD",
+  "DEFMACRO",
+  "DEFTYPE",
+  "DEFPACKAGE",
+  "WITH-OUTPUT-TO-STRING",
+  "WITH-INPUT-FROM-STRING",
+  "WITH-OPEN-FILE",
+  "WITH-OPEN-STREAM",
+  "WITH-SLOTS",
+  "WITH-ACCESSORS",
+  "WITH-HASH-TABLE-ITERATOR",
+  "DESTRUCTURING-BIND",
+  "MULTIPLE-VALUE-BIND",
+  "MULTIPLE-VALUE-SETQ",
+  "HANDLER-CASE",
+  "HANDLER-BIND",
+  "RESTART-CASE",
+  "MACROLET",
+  "SYMBOL-MACROLET",
 ]);

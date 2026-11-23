@@ -245,6 +245,7 @@ register("NREVERSE", 1, 1, (args) => listFrom(consForm(args[0]!).reverse())); //
 
 //LLM-written registrations
 register("FIRST", 1, 1, (args) => expectCons(args[0]!).car);
+register("SECOND", 1, 1, (args) => expectCons(expectCons(args[0]!).cdr).car);
 register("REST", 1, 1, (args) => expectCons(args[0]!).cdr);
 register("CADR", 1, 1, (args) => expectCons(expectCons(args[0]!).cdr).car);
 register(
@@ -295,10 +296,17 @@ register("MOD", 2, 2, (args) => {
   const remainder = (expectNumber(args[0]!) % divisor) + divisor;
   return { kind: "number", value: remainder % divisor };
 });
-register("FLOOR", 1, 1, (args) => ({
-  kind: "number",
-  value: Math.floor(expectNumber(args[0]!)),
-}));
+register("FLOOR", 1, 2, (args) => {
+  const value = expectNumber(args[0]!);
+  const divisor = args[1] === undefined ? 1 : expectNumber(args[1]);
+  if (divisor === 0)
+    throw new LispEvalError(
+      "division-by-zero",
+      null,
+      "FLOOR: division by zero",
+    );
+  return { kind: "number", value: Math.floor(value / divisor) };
+});
 register("SQRT", 1, 1, (args) => {
   const value = expectNumber(args[0]!);
   if (value < 0)

@@ -90,6 +90,38 @@ export function withStepCeiling<T>(requested: number, run: () => T): T {
   }
 }
 
+// Heads the evaluator dispatches itself instead of looking up as functions.
+// This list mirrors the switch in evaluateInner: a name here is special, not a
+// callable name, so a name checker must not read it as a function call.
+export const SPECIAL_FORMS: ReadonlySet<string> = new Set([
+  "IF",
+  "COND",
+  "WHEN",
+  "UNLESS",
+  "PROGN",
+  "AND",
+  "OR",
+  "SETQ",
+  "SETF",
+  "INCF",
+  "DECF",
+  "PUSH",
+  "POP",
+  "RETURN",
+  "DEFUN",
+  "LAMBDA",
+  "LET",
+  "LET*",
+  "FLET",
+  "LABELS",
+  "DOLIST",
+  "DOTIMES",
+  "DEFPARAMETER",
+  "DEFVAR",
+  "FUNCTION",
+  "QUOTE",
+]);
+
 export function evaluate(node: AstNode, env: Env  ): LispValue {
   const observer = currentObserver;
   if (observer === null) return evaluateInner(node, env);
@@ -393,7 +425,10 @@ function evalDolist(form: ListNode, env: Env): LispValue {
     throw error;
   }
 
-  return resultNode === undefined ? NIL : evaluate(resultNode, env);
+  // CL binds the variable to NIL for the result form after the loop.
+  const scope = createEnv(env);
+  define(scope, name, NIL);
+  return resultNode === undefined ? NIL : evaluate(resultNode, scope);
 }
 
 function evalDotimes(form: ListNode, env: Env): LispValue {
@@ -453,7 +488,11 @@ function evalPush(form: ListNode, env: Env): LispValue {
 }
 
 function evalPop(form: ListNode, env: Env): LispValue {
-  const place = resolvePlace(form.children[1]!, env);
+  const placeNode = form.children[1];
+  if (placeNode === undefined)
+    throw new LispEvalError("malformed-form", form.start, "pop needs a place");
+
+  const place = resolvePlace(placeNode, env);
   const cell = place.get();
   if (cell.kind !== "cons")
     throw new LispEvalError("type-error", null, "pop: place is not a list");
@@ -463,7 +502,15 @@ function evalPop(form: ListNode, env: Env): LispValue {
 
 function evalIncDecf(form: ListNode, env: Env, sign: number): LispValue {
   //sign is either 1 or -1 and multiplies amount to inc or dec
-  const place = resolvePlace(form.children[1]!, env);
+  const placeNode = form.children[1];
+  if (placeNode === undefined)
+    throw new LispEvalError(
+      "malformed-form",
+      form.start,
+      "incf and decf need a place",
+    );
+
+  const place = resolvePlace(placeNode, env);
   const amount =
     form.children[2] === undefined
       ? 1

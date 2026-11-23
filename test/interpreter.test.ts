@@ -10,6 +10,8 @@ import {
   evaluate,
   HARD_STEP_CEILING,
   lookup,
+  ReturnSignal,
+  SPECIAL_FORMS,
   withObserver,
   withStepCeiling,
 } from "../src/core/interpreter";
@@ -819,4 +821,44 @@ test("rejects a ceiling outside one to the backstop", () => {
     () => withStepCeiling(HARD_STEP_CEILING + 1, () => undefined),
     RangeError,
   );
+});
+
+test("dispatches every name it lists as a special form", () => {
+  for (const name of SPECIAL_FORMS) {
+    let code: string | undefined;
+
+    try {
+      evaluate(parse(`(${name})`), createEnv(null));
+    } catch (error) {
+      if (error instanceof ReturnSignal) continue;
+      if (error instanceof LispEvalError) code = error.code;
+      else if (error instanceof RangeError) code = "stack";
+      else throw error;
+    }
+
+    assert.notEqual(code, "undefined-function", `${name} must be special`);
+  }
+});
+
+test("reports a place form with no place as malformed", () => {
+  assert.equal(budgetCode(() => run("(incf)")), "malformed-form");
+  assert.equal(budgetCode(() => run("(decf)")), "malformed-form");
+  assert.equal(budgetCode(() => run("(pop)")), "malformed-form");
+});
+
+test("divides before flooring when floor takes two arguments", () => {
+  assert.deepEqual(run("(floor 14 5)"), num(2));
+});
+
+test("takes the second element of a list", () => {
+  assert.deepEqual(run("(second '(1 2 3))"), num(2));
+});
+
+test("leaves a dotimes counter bound for the result form", () => {
+  assert.deepEqual(run("(dotimes (i 3 i))"), num(3));
+});
+
+test("binds a dolist variable to NIL for the result form", () => {
+  assert.deepEqual(run("(dolist (x (list 1 2) (list x)) nil)"), cons(NIL, NIL));
+  assert.deepEqual(run("(dolist (x (list 1 2) x) nil)"), NIL);
 });

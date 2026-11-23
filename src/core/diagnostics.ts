@@ -16,7 +16,16 @@ export type ShapeCode =
   | "local-definitions"
   | "local-definition";
 
-export type DiagnosticCode = ReaderErrorCode | ShapeCode | EvalErrorCode;
+// Name mistakes found without evaluating the file. The other three codes these
+// checks use (undefined-function, unbound-variable, arity) come from EvalErrorCode
+// because the evaluator can find the same mistakes in code that actually runs.
+export type NameCode = "variable-as-function";
+
+export type DiagnosticCode =
+  | ReaderErrorCode
+  | ShapeCode
+  | EvalErrorCode
+  | NameCode;
 
 export interface Diagnostic {
   //ideally this naming won't collide with vscode.Diagnostic

@@ -46,7 +46,7 @@ function visited(source: string): AstNode[] {
 test("collects a defun with its parameter count", () => {
   const symbols = collectSymbols(parseAll("(defun f (x y) x)"));
 
-  assert.equal(symbols.functions.get("F")?.parameterCount, 2);
+  assert.deepEqual(symbols.functions.get("F")?.arity, { min: 2, max: 2 });
   assert.equal(lookupFunction(rootScope("(defun f (x y) x)"), "F")?.kind, "function");
 });
 
@@ -154,7 +154,14 @@ test("walks the vector literal but none of its contents", () => {
 test("collects a defun nested inside another form", () => {
   const symbols = collectSymbols(parseAll("(progn (defun g (x) x) (g 1))"));
 
-  assert.equal(symbols.functions.get("G")?.parameterCount, 1);
+  assert.deepEqual(symbols.functions.get("G")?.arity, { min: 1, max: 1 });
+});
+
+test("binds a dotimes counter in its result form", () => {
+  const source = "(dotimes (i 3 i) i)";
+  const scope = scopeAt(source, source.indexOf("3 i") + 2);
+
+  assert.equal(lookupVariable(scope, "I")?.kind, "local");
 });
 
 test("does not visit a call's head atom", () => {
