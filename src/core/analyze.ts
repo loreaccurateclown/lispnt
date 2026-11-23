@@ -12,7 +12,17 @@ import {
   ReturnSignal,
   withStepCeiling,
 } from "./interpreter";
+import { checkNames } from "./name-checks";
 import { type AstNode, createReader } from "./reader";
+
+// Mistakes the name checker reports for the whole file. Evaluation finds the
+// same ones in code it reaches, so its copies are dropped rather than shown
+// twice — with a different position and a weaker message.
+const NAME_CODES: ReadonlySet<string> = new Set([
+  "undefined-function",
+  "unbound-variable",
+  "arity",
+]);
 
 function isCoveredByDiagnostic(
   form: AstNode,
@@ -56,7 +66,7 @@ export function analyze(source: string): Diagnostic[] {
     );
   });
 
-  return withStepCeiling(HARD_STEP_CEILING, () => {
+  withStepCeiling(HARD_STEP_CEILING, () => {
     const env = createEnv(null);
 
     for (const form of forms) {
@@ -70,6 +80,9 @@ export function analyze(source: string): Diagnostic[] {
           // learner's mistake, so it is not reported.
           if (error.code === "unsupported-standard") continue;
           if (error.code === "undefined-function" && loadsAnotherFile) continue;
+          // The name checker reports these for the whole file, including the
+          // bodies evaluation never reaches.
+          if (NAME_CODES.has(error.code)) continue;
           diagnostics.push(diagnosticFromEvalError(error, form.start));
           continue;
         }
@@ -92,7 +105,11 @@ export function analyze(source: string): Diagnostic[] {
         throw error;
       }
     }
-
-    return diagnostics;
   });
+
+  // Whole-file name checks: they see every body, including the ones evaluation
+  // never reaches.
+  diagnostics.push(...checkNames(forms));
+
+  return diagnostics;
 }

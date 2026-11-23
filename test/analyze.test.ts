@@ -187,8 +187,12 @@ test("reports an out of range array index", () => {
 test("reports setf on a form that is not a place", () => {
   const diagnostics = analyze("(setf (unknown-place) 1)");
 
-  assert.equal(diagnostics.length, 1);
-  assert.equal(diagnostics[0]?.code, "not-a-place");
+  // The place form calls a function that does not exist, and it is not a
+  // place either: two true statements about the same line.
+  assert.deepEqual(
+    diagnostics.map((diagnostic) => diagnostic.code),
+    ["not-a-place", "undefined-function"],
+  );
 });
 
 test("reports a call with the wrong argument count", () => {
@@ -212,8 +216,12 @@ test("reports nothing for valid evaluable code", () => {
 test("stops a long running loop with an evaluation budget", () => {
   const diagnostics = analyze("(dotimes (i 100000000) (setq x 1))");
 
-  assert.equal(diagnostics.length, 1);
-  assert.equal(diagnostics[0]?.code, "evaluation-budget");
+  // Plus the name check's warning: the loop body assigns X, which is never
+  // bound anywhere in the file.
+  assert.deepEqual(
+    diagnostics.map((diagnostic) => diagnostic.code),
+    ["evaluation-budget", "unbound-variable"],
+  );
 });
 
 test("stops runaway recursion with an evaluation budget", () => {
@@ -294,4 +302,59 @@ test("reports a labels definition without an argument list", () => {
 
 test("accepts a well formed labels form", () => {
   assert.deepEqual(analyze("(labels ((f (x) x)) (f 1))"), []);
+});
+
+test("reports an undefined function in a body nothing calls", () => {
+  const diagnostics = analyze("(defun g () (missing-fn))");
+
+  assert.deepEqual(
+    diagnostics.map((diagnostic) => diagnostic.code),
+    ["undefined-function"],
+  );
+  assert.equal(diagnostics[0]?.severity, "warning");
+  assert.match(diagnostics[0]?.message ?? "", /load that file first/);
+});
+
+test("reports a variable called as a function in a body nothing calls", () => {
+  const diagnostics = analyze("(defun f (x) (x * 2))");
+
+  assert.deepEqual(
+    diagnostics.map((diagnostic) => diagnostic.code),
+    ["variable-as-function", "unbound-variable"],
+  );
+  assert.equal(diagnostics[0]?.severity, "error");
+});
+
+test("reports a wrong arity in a body nothing calls", () => {
+  const diagnostics = analyze("(defun g (a) (g a b))");
+
+  assert.deepEqual(
+    diagnostics.map((diagnostic) => diagnostic.code),
+    ["arity", "unbound-variable"],
+  );
+});
+
+test("reports an unbound variable in a let body nothing evaluates", () => {
+  const diagnostics = analyze("(defun g () (let ((y 1)) z))");
+
+  assert.deepEqual(
+    diagnostics.map((diagnostic) => diagnostic.code),
+    ["unbound-variable"],
+  );
+});
+
+test("reports a name mistake once, in the checker's wording", () => {
+  const diagnostics = analyze("(foo 1)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.match(diagnostics[0]?.message ?? "", /load that file first/);
+});
+
+test("keeps a runtime type error next to a name check", () => {
+  const diagnostics = analyze("(car 1) (missing-fn)");
+
+  assert.deepEqual(
+    diagnostics.map((diagnostic) => diagnostic.code),
+    ["type-error", "undefined-function"],
+  );
 });

@@ -42,6 +42,10 @@ function checkVariable(
   const name = symbolWord(node);
   if (name === undefined) return;
   if (name.startsWith(":")) return;
+  // Special variables are often defined elsewhere: another file, the REPL, or
+  // the implementation. Leave them alone. A lone * is the multiplication
+  // function, not a special.
+  if (name.length > 2 && name.startsWith("*") && name.endsWith("*")) return;
   // Reader gaps: character literals and ratios are not parsed yet, so they
   // arrive as symbols. Reporting them as unbound names would be noise.
   if (name.startsWith("#\\")) return;
