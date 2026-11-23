@@ -109,14 +109,14 @@ test("lets let* values see earlier names", () => {
 
 test("hides an flet definition from its own body", () => {
   const source = "(flet ((h (x) (h x))) (h 1))";
-  const bodyScope = scopeAt(source, source.indexOf("(h x)") + 1);
+  const bodyScope = scopeAt(source, source.indexOf("(h x)") + 3);
 
   assert.equal(lookupFunction(bodyScope, "H"), undefined);
 });
 
 test("shows a labels definition to its own body", () => {
   const source = "(labels ((h (x) (h x))) (h 1))";
-  const bodyScope = scopeAt(source, source.indexOf("(h x)") + 1);
+  const bodyScope = scopeAt(source, source.indexOf("(h x)") + 3);
 
   assert.equal(lookupFunction(bodyScope, "H")?.kind, "function");
 });
@@ -155,4 +155,86 @@ test("collects a defun nested inside another form", () => {
   const symbols = collectSymbols(parseAll("(progn (defun g (x) x) (g 1))"));
 
   assert.equal(symbols.functions.get("G")?.parameterCount, 1);
+});
+
+test("does not visit a call's head atom", () => {
+  const source = "(car x)";
+  const scopes = scopesByOffset(source);
+
+  assert.equal(scopes.has(source.indexOf("car")), false);
+  assert.equal(scopes.has(source.lastIndexOf("x")), true);
+});
+
+test("visits a lambda in head position in full", () => {
+  const source = "((lambda (y) (+ y 1)) 2)";
+  const scope = scopeAt(source, source.indexOf("y 1"));
+
+  assert.equal(lookupVariable(scope, "Y")?.kind, "parameter");
+});
+
+test("visits a cond clause test as a form", () => {
+  const source = "(cond (x 1))";
+
+  assert.equal(scopesByOffset(source).has(source.indexOf("x 1")), true);
+});
+
+test("does not deliver a cond clause list as a form", () => {
+  const source = "(cond (x 1))";
+
+  assert.equal(scopesByOffset(source).has(source.indexOf("(x 1)")), false);
+});
+
+test("does not visit the name in a function form", () => {
+  const source = "(function f)";
+
+  assert.equal(scopesByOffset(source).has(source.lastIndexOf("f")), false);
+});
+
+test("visits the lambda inside a function form", () => {
+  const source = "(function (lambda (y) (+ y 1)))";
+  const scope = scopeAt(source, source.indexOf("y 1"));
+
+  assert.equal(lookupVariable(scope, "Y")?.kind, "parameter");
+});
+
+test("binds a loop name introduced by for", () => {
+  const source = "(loop for x in xs do (print x))";
+  const scope = scopeAt(source, source.indexOf("x)"));
+
+  assert.equal(lookupVariable(scope, "X")?.kind, "local");
+});
+
+test("binds a loop name introduced by with", () => {
+  const source = "(loop with y = 1 do (print y))";
+  const scope = scopeAt(source, source.indexOf("y)"));
+
+  assert.equal(lookupVariable(scope, "Y")?.kind, "local");
+});
+
+test("binds a second loop name introduced by and", () => {
+  const source = "(loop for x in xs and y in ys do (print y))";
+  const scope = scopeAt(source, source.indexOf("y)"));
+
+  assert.equal(lookupVariable(scope, "Y")?.kind, "local");
+});
+
+test("visits no loop clause keyword as a form", () => {
+  const source = "(loop for x in xs do (print x))";
+  const scopes = scopesByOffset(source);
+
+  assert.equal(scopes.has(source.indexOf("for")), false);
+  assert.equal(scopes.has(source.indexOf("in")), false);
+  assert.equal(scopes.has(source.indexOf("do")), false);
+});
+
+test("visits a list token inside a loop form", () => {
+  const source = "(loop for x in xs collect (list x))";
+
+  assert.equal(scopesByOffset(source).has(source.indexOf("(list x)")), true);
+});
+
+test("does not visit an atom driver value inside a loop form", () => {
+  const source = "(loop for x in xs do x)";
+
+  assert.equal(scopesByOffset(source).has(source.indexOf("xs")), false);
 });

@@ -97,14 +97,28 @@ export function walkWithScopes(
       case "DOTIMES":
         visitLoop(node, current);
         return;
+      case "COND":
+        visitConditional(node, current);
+        return;
+      case "FUNCTION":
+        visitFunctionForm(node, current);
+        return;
+      case "LOOP":
+        visitLoopForm(node, current);
+        return;
       case "DEFPARAMETER":
       case "DEFVAR":
       case "DEFCONSTANT":
         visitDefinition(node, current);
         return;
-      default:
-        for (const child of node.children) visit(child, current);
+      default: {
+        // A head symbol is a function position, not a variable reference.
+        const head = node.children[0];
+        const first = head !== undefined && isSymbolNode(head) ? 1 : 0;
+
+        for (const child of node.children.slice(first)) visit(child, current);
         if (node.tail !== undefined) visit(node.tail, current);
+      }
     }
   }
 
@@ -204,6 +218,52 @@ export function walkWithScopes(
   function visitDefinition(node: ListNode, current: Scope): void {
     const valueNode = node.children[2];
     if (valueNode !== undefined) visit(valueNode, current);
+  }
+
+  function visitConditional(node: ListNode, current: Scope): void {
+    for (const clause of node.children.slice(1)) {
+      // A clause is (test form*): its first element is a form in test
+      // position, not a call.
+      if (clause.kind === "list" && clause.prefix === undefined) {
+        for (const form of clause.children) visit(form, current);
+      } else {
+        visit(clause, current);
+      }
+    }
+  }
+
+  function visitFunctionForm(node: ListNode, current: Scope): void {
+    // (function f) names a function; (function (lambda ...)) is code.
+    const target = node.children[1];
+    if (target !== undefined && target.kind === "list") visit(target, current);
+  }
+
+  function visitLoopForm(node: ListNode, current: Scope): void {
+    const inner = childScope(current);
+    const tokens = node.children.slice(1);
+
+    for (let index = 0; index < tokens.length; index += 1) {
+      const token = tokens[index];
+      if (token === undefined) continue;
+
+      const word = symbolWord(token);
+
+      if (word === "FOR" || word === "AS" || word === "WITH" || word === "AND") {
+        const candidate = tokens[index + 1];
+        const candidateWord =
+          candidate !== undefined ? symbolWord(candidate) : undefined;
+
+        if (
+          candidate !== undefined &&
+          isSymbolNode(candidate) &&
+          (candidateWord === undefined || !LOOP_KEYWORDS.has(candidateWord))
+        ) {
+          bindVariable(inner, candidate, "local");
+        }
+      }
+
+      if (token.kind === "list") visit(token, inner);
+    }
   }
 
   for (const form of forms) visit(form, scope);
@@ -328,6 +388,47 @@ function isSymbolNode(node: AstNode | undefined): boolean {
   return node !== undefined && node.kind === "atom" && node.atomType === "symbol";
 }
 
+function symbolWord(node: AstNode): string | undefined {
+  return isSymbolNode(node) ? symbolText(node) : undefined;
+}
+
 function symbolText(node: AstNode): string {
   return String(node.kind === "atom" ? node.value : "").toUpperCase();
 }
+
+const LOOP_KEYWORDS: ReadonlySet<string> = new Set([
+  "FOR",
+  "AS",
+  "WITH",
+  "AND",
+  "IN",
+  "ON",
+  "ACROSS",
+  "FROM",
+  "TO",
+  "BELOW",
+  "ABOVE",
+  "BY",
+  "WHILE",
+  "UNTIL",
+  "REPEAT",
+  "DO",
+  "DOING",
+  "COLLECT",
+  "COLLECTING",
+  "SUM",
+  "SUMMING",
+  "COUNT",
+  "COUNTING",
+  "MAXIMIZE",
+  "MAXIMIZING",
+  "MINIMIZE",
+  "MINIMIZING",
+  "APPEND",
+  "APPENDING",
+  "NCONC",
+  "INITIALLY",
+  "FINALLY",
+  "RETURN",
+  "INTO",
+]);
