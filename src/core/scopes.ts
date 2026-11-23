@@ -136,6 +136,28 @@ export function walkWithScopes(
       case "LOOP":
         visitLoopForm(node, current);
         return;
+      case "WITH-OUTPUT-TO-STRING":
+        visitStreamBinding(node, current, false);
+        return;
+      case "WITH-INPUT-FROM-STRING":
+        visitStreamBinding(node, current, true);
+        return;
+      case "WITH-OPEN-FILE":
+      case "WITH-OPEN-STREAM":
+        visitOpenBinding(node, current);
+        return;
+      case "WITH-HASH-TABLE-ITERATOR":
+        visitIteratorBinding(node, current);
+        return;
+      case "MULTIPLE-VALUE-BIND":
+        visitMultipleValueBind(node, current);
+        return;
+      case "DESTRUCTURING-BIND":
+        visitDestructuringBind(node, current);
+        return;
+      case "HANDLER-CASE":
+        visitHandlerCase(node, current);
+        return;
       case "DEFPARAMETER":
       case "DEFVAR":
       case "DEFCONSTANT":
@@ -377,6 +399,123 @@ export function walkWithScopes(
       } else {
         visit(clause, current);
       }
+    }
+  }
+
+  function visitStreamBinding(
+    node: ListNode,
+    current: Scope,
+    hasValue: boolean,
+  ): void {
+    const spec = node.children[1];
+    const inner = childScope(current);
+
+    if (spec !== undefined && spec.kind === "list") {
+      const [varNode, valueNode] = spec.children;
+      // with-input-from-string takes the string to read from first.
+      if (hasValue && valueNode !== undefined) visit(valueNode, current);
+      bindVariable(inner, varNode, "local");
+    }
+
+    for (const form of node.children.slice(2)) visit(form, inner);
+  }
+
+  function visitOpenBinding(node: ListNode, current: Scope): void {
+    const spec = node.children[1];
+    const inner = childScope(current);
+
+    if (spec !== undefined && spec.kind === "list") {
+      const [varNode, ...optionNodes] = spec.children;
+      for (const optionNode of optionNodes) visit(optionNode, current);
+      bindVariable(inner, varNode, "local");
+    }
+
+    for (const form of node.children.slice(2)) visit(form, inner);
+  }
+
+  function visitIteratorBinding(node: ListNode, current: Scope): void {
+    const spec = node.children[1];
+    const inner = childScope(current);
+
+    if (spec !== undefined && spec.kind === "list") {
+      const [functionNode, tableNode] = spec.children;
+      if (tableNode !== undefined) visit(tableNode, current);
+
+      if (functionNode !== undefined && isSymbolNode(functionNode)) {
+        const name = symbolText(functionNode);
+        inner.functions.set(name, {
+          name,
+          kind: "function",
+          position: functionNode.start,
+          arity: { min: 0, max: 0 },
+        });
+      }
+    }
+
+    for (const form of node.children.slice(2)) visit(form, inner);
+  }
+
+  function visitMultipleValueBind(node: ListNode, current: Scope): void {
+    const varsNode = node.children[1];
+    const valueNode = node.children[2];
+    const inner = childScope(current);
+
+    if (valueNode !== undefined) visit(valueNode, current);
+    if (varsNode !== undefined && varsNode.kind === "list") {
+      for (const variable of varsNode.children) {
+        bindVariable(inner, variable, "local");
+      }
+    }
+
+    for (const form of node.children.slice(3)) visit(form, inner);
+  }
+
+  function visitDestructuringBind(node: ListNode, current: Scope): void {
+    const patternNode = node.children[1];
+    const valueNode = node.children[2];
+    const inner = childScope(current);
+
+    if (valueNode !== undefined) visit(valueNode, current);
+    bindPattern(inner, patternNode);
+
+    for (const form of node.children.slice(3)) visit(form, inner);
+  }
+
+  function bindPattern(scope: Scope, node: AstNode | undefined): void {
+    if (node === undefined) return;
+    if (node.kind === "atom") {
+      const word = symbolWord(node);
+      if (word !== undefined && !word.startsWith("&")) {
+        bindVariable(scope, node, "local");
+      }
+      return;
+    }
+    if (node.kind !== "list") return;
+
+    for (const child of node.children) bindPattern(scope, child);
+  }
+
+  function visitHandlerCase(node: ListNode, current: Scope): void {
+    const protectedNode = node.children[1];
+    if (protectedNode !== undefined) visit(protectedNode, current);
+
+    for (const clause of node.children.slice(2)) {
+      if (clause.kind !== "list" || clause.prefix !== undefined) {
+        visit(clause, current);
+        continue;
+      }
+
+      // (condition (variable) forms...), or (:no-error (variables...) ...)
+      const variablesNode = clause.children[1];
+      const inner = childScope(current);
+
+      if (variablesNode !== undefined && variablesNode.kind === "list") {
+        for (const variable of variablesNode.children) {
+          bindVariable(inner, variable, "local");
+        }
+      }
+
+      for (const form of clause.children.slice(2)) visit(form, inner);
     }
   }
 
@@ -783,17 +922,9 @@ export const OPAQUE_FORMS: ReadonlySet<string> = new Set([
   "DEFMACRO",
   "DEFTYPE",
   "DEFPACKAGE",
-  "WITH-OUTPUT-TO-STRING",
-  "WITH-INPUT-FROM-STRING",
-  "WITH-OPEN-FILE",
-  "WITH-OPEN-STREAM",
   "WITH-SLOTS",
   "WITH-ACCESSORS",
-  "WITH-HASH-TABLE-ITERATOR",
-  "DESTRUCTURING-BIND",
-  "MULTIPLE-VALUE-BIND",
   "MULTIPLE-VALUE-SETQ",
-  "HANDLER-CASE",
   "HANDLER-BIND",
   "RESTART-CASE",
   "MACROLET",

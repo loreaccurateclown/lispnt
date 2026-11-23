@@ -191,8 +191,64 @@ test("points at loading another file in the undefined function message", () => {
   assert.match(found[0]?.message ?? "", /load that file first/);
 });
 
-test("does not report an opaque standard form", () => {
-  assert.deepEqual(codes("(with-hash-table-iterator (next table) (next))"), []);
+test("binds the function a hash table iterator introduces", () => {
+  assert.deepEqual(
+    codes("(defun f (table) (with-hash-table-iterator (next table) (next)))"),
+    [],
+  );
+});
+
+test("binds the stream variable of with-output-to-string", () => {
+  assert.deepEqual(
+    codes("(defun f () (with-output-to-string (s) (princ 1 s)))"),
+    [],
+  );
+});
+
+test("walks the string form of with-input-from-string", () => {
+  assert.deepEqual(
+    codes("(defun f (text) (with-input-from-string (s text) (read s)))"),
+    [],
+  );
+});
+
+test("binds the stream variable of with-open-file", () => {
+  assert.deepEqual(
+    codes(
+      '(defun f () (with-open-file (s "x.txt" :direction :output) (write-line "hi" s)))',
+    ),
+    [],
+  );
+});
+
+test("binds the variables of multiple-value-bind", () => {
+  assert.deepEqual(
+    codes("(defun f () (multiple-value-bind (a b) (floor 7 2) (+ a b)))"),
+    [],
+  );
+});
+
+test("binds a nested destructuring pattern", () => {
+  assert.deepEqual(
+    codes(
+      "(defun f () (destructuring-bind (a (b c)) (list 1 (list 2 3)) (+ a b c)))",
+    ),
+    [],
+  );
+});
+
+test("binds the condition variable of a handler-case clause", () => {
+  assert.deepEqual(
+    codes("(defun f () (handler-case (list 1) (error (e) (princ e))))"),
+    [],
+  );
+});
+
+test("reports an undefined function inside a decoded form", () => {
+  assert.deepEqual(
+    codes("(defun f () (with-output-to-string (s) (missing s)))"),
+    ["undefined-function"],
+  );
 });
 
 test("does not report the second of a list", () => {
