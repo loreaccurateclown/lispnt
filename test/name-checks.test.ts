@@ -206,3 +206,23 @@ test("does not report a dotimes result form that uses the counter", () => {
 test("stays quiet about names when the file defines a structure", () => {
   assert.deepEqual(codes("(defstruct point x) (make-point :x 1)"), []);
 });
+
+test("does not report an accessor a structure generates", () => {
+  assert.deepEqual(
+    codes("(defstruct point x) (defun get-x (p) (point-x p))"),
+    [],
+  );
+});
+
+test("still reports an undefined function in a file with a structure", () => {
+  assert.deepEqual(codes("(defstruct point x) (mystery-fn 1)"), [
+    "undefined-function",
+  ]);
+});
+
+test("stays quiet about undefined names when a structure is not modelled", () => {
+  assert.deepEqual(
+    codes("(defstruct (child (:include parent)) z) (mystery-fn 1)"),
+    [],
+  );
+});

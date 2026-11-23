@@ -94,10 +94,9 @@ function checkCall(
       return;
     }
 
-    // A file that loads another, or defines structures we do not expand, may
-    // call names we cannot see: the loaded file's definitions, or the
-    // accessors and constructors that defstruct generates.
-    if (symbols.loadsAnotherFile || symbols.definesStructures) return;
+    // A file that loads another, or defines a structure in a way we cannot
+    // model (:include and the like), may call names we cannot see.
+    if (symbols.loadsAnotherFile || symbols.unmodelledStructures) return;
 
     diagnostics.push({
       code: "undefined-function",

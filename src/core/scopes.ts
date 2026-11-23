@@ -33,14 +33,14 @@ export interface FileSymbols {
   readonly functions: Map<string, Binding>;
   readonly definitionCounts: Map<string, number>;
   readonly loadsAnotherFile: boolean;
-  readonly definesStructures: boolean;
+  readonly unmodelledStructures: boolean;
 }
 
 export function collectSymbols(forms: AstNode[]): FileSymbols {
   const variables = new Map<string, Binding>();
   const functions = new Map<string, Binding>();
   const definitionCounts = new Map<string, number>();
-  const flags = { structures: false };
+  const flags = { unmodelled: false };
 
   const loadsAnotherFile = forms.some((form) => headName(form) === "LOAD");
 
@@ -53,7 +53,7 @@ export function collectSymbols(forms: AstNode[]): FileSymbols {
     functions,
     definitionCounts,
     loadsAnotherFile,
-    definesStructures: flags.structures,
+    unmodelledStructures: flags.unmodelled,
   };
 }
 
@@ -337,12 +337,141 @@ export function lookupFunction(
   return undefined;
 }
 
+// Registers the names a defstruct generates. Returns false when an option we do
+// not model (:include, an unknown option) may generate names we cannot see.
+function registerDefstruct(
+  node: ListNode,
+  functions: Map<string, Binding>,
+): boolean {
+  let nameNode = node.children[1];
+  if (nameNode === undefined) return true;
+
+  const options: ListNode[] = [];
+
+  if (nameNode.kind === "list") {
+    const header = nameNode.children;
+    nameNode = header[0];
+    for (const option of header.slice(1)) {
+      if (option.kind === "list" && option.prefix === undefined) {
+        options.push(option);
+      }
+    }
+  }
+
+  if (nameNode === undefined || !isSymbolNode(nameNode)) return true;
+
+  const name = symbolText(nameNode);
+  const position = nameNode.start;
+
+  let prefix: string | null = `${name}-`;
+  let constructor: string | null = `MAKE-${name}`;
+  let predicate: string | null = `${name}-P`;
+  let copier: string | null = `COPY-${name}`;
+  let modelled = true;
+
+  for (const option of options) {
+    const rawKey =
+      option.children[0] !== undefined
+        ? symbolWord(option.children[0])
+        : undefined;
+    // Keywords arrive with the leading colon, as in ":CONC-NAME".
+    const key =
+      rawKey !== undefined && rawKey.startsWith(":")
+        ? rawKey.slice(1)
+        : rawKey;
+    const value = option.children[1];
+
+    switch (key) {
+      case "CONC-NAME": {
+        if (value === undefined) break;
+        const word = symbolWord(value);
+        if (word === "NIL") prefix = null;
+        else if (word === undefined) modelled = false;
+        else prefix = word;
+        break;
+      }
+      case "CONSTRUCTOR":
+        constructor = namedOption(value, `MAKE-${name}`, () => {
+          modelled = false;
+        });
+        break;
+      case "PREDICATE":
+        predicate = namedOption(value, `${name}-P`, () => {
+          modelled = false;
+        });
+        break;
+      case "COPIER":
+        copier = namedOption(value, `COPY-${name}`, () => {
+          modelled = false;
+        });
+        break;
+      case "INCLUDE":
+        modelled = false;
+        break;
+      case "NAMED":
+      case "TYPE":
+      case "PRINT-FUNCTION":
+      case "PRINT-OBJECT":
+        break;
+      default:
+        modelled = false;
+    }
+  }
+
+  const register = (functionName: string | null, arity: Arity): void => {
+    if (functionName === null || functions.has(functionName)) return;
+    functions.set(functionName, {
+      name: functionName,
+      kind: "function",
+      position,
+      arity,
+    });
+  };
+
+  register(constructor, { min: 0, max: null });
+  register(predicate, { min: 1, max: 1 });
+  register(copier, { min: 1, max: 1 });
+
+  for (const slot of node.children.slice(2)) {
+    const slotNode = slot.kind === "list" ? slot.children[0] : slot;
+    if (slotNode === undefined || !isSymbolNode(slotNode)) continue;
+
+    const slotName = symbolText(slotNode);
+    register(prefix === null ? slotName : `${prefix}${slotName}`, {
+      min: 1,
+      max: 1,
+    });
+  }
+
+  return modelled;
+}
+
+function namedOption(
+  value: AstNode | undefined,
+  fallback: string,
+  onUnmodelled: () => void,
+): string | null {
+  if (value === undefined) return fallback;
+
+  const word = symbolWord(value);
+  if (word === "NIL") return null;
+  if (word !== undefined) return word;
+
+  if (value.kind === "list") {
+    const first = value.children[0];
+    if (first !== undefined && isSymbolNode(first)) return symbolText(first);
+  }
+
+  onUnmodelled();
+  return null;
+}
+
 function collectFromNode(
   node: AstNode,
   variables: Map<string, Binding>,
   functions: Map<string, Binding>,
   definitionCounts: Map<string, number>,
-  flags: { structures: boolean },
+  flags: { unmodelled: boolean },
 ): void {
   if (node.kind === "quote") return;
   if (node.kind === "atom") return;
@@ -350,7 +479,9 @@ function collectFromNode(
 
   const head = headName(node);
 
-  if (head === "DEFSTRUCT") flags.structures = true;
+  if (head === "DEFSTRUCT") {
+    if (!registerDefstruct(node, functions)) flags.unmodelled = true;
+  }
 
   if (head === "DEFUN") {
     const nameNode = node.children[1];

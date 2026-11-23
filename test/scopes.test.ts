@@ -245,3 +245,91 @@ test("does not visit an atom driver value inside a loop form", () => {
 
   assert.equal(scopesByOffset(source).has(source.indexOf("xs")), false);
 });
+
+test("registers the names a defstruct generates", () => {
+  const symbols = collectSymbols(parseAll("(defstruct point x y)"));
+
+  assert.deepEqual(symbols.functions.get("MAKE-POINT")?.arity, {
+    min: 0,
+    max: null,
+  });
+  assert.deepEqual(symbols.functions.get("POINT-P")?.arity, { min: 1, max: 1 });
+  assert.deepEqual(symbols.functions.get("COPY-POINT")?.arity, {
+    min: 1,
+    max: 1,
+  });
+  assert.deepEqual(symbols.functions.get("POINT-X")?.arity, { min: 1, max: 1 });
+  assert.deepEqual(symbols.functions.get("POINT-Y")?.arity, { min: 1, max: 1 });
+});
+
+test("uses bare slot names when the conc-name is nil", () => {
+  const symbols = collectSymbols(
+    parseAll("(defstruct (tree-node (:conc-name nil)) key lc rc)"),
+  );
+
+  assert.ok(symbols.functions.has("KEY"));
+  assert.ok(symbols.functions.has("LC"));
+  assert.ok(symbols.functions.has("RC"));
+  assert.equal(symbols.functions.has("TREE-NODE-KEY"), false);
+});
+
+test("honours a conc-name prefix", () => {
+  const symbols = collectSymbols(
+    parseAll("(defstruct (pt (:conc-name point-)) x)"),
+  );
+
+  assert.ok(symbols.functions.has("POINT-X"));
+  assert.ok(symbols.functions.has("MAKE-PT"));
+});
+
+test("registers a custom constructor name", () => {
+  const symbols = collectSymbols(
+    parseAll("(defstruct (pt (:constructor make-one (x))) x)"),
+  );
+
+  assert.ok(symbols.functions.has("MAKE-ONE"));
+  assert.equal(symbols.functions.has("MAKE-PT"), false);
+});
+
+test("registers no constructor when it is nil", () => {
+  const symbols = collectSymbols(
+    parseAll("(defstruct (pt (:constructor nil)) x)"),
+  );
+
+  assert.equal(symbols.functions.has("MAKE-PT"), false);
+});
+
+test("registers no predicate when it is nil", () => {
+  const symbols = collectSymbols(
+    parseAll("(defstruct (pt (:predicate nil)) x)"),
+  );
+
+  assert.equal(symbols.functions.has("PT-P"), false);
+});
+
+test("registers no copier when it is nil", () => {
+  const symbols = collectSymbols(parseAll("(defstruct (pt (:copier nil)) x)"));
+
+  assert.equal(symbols.functions.has("COPY-PT"), false);
+});
+
+test("reads a slot given with its default", () => {
+  const symbols = collectSymbols(parseAll("(defstruct point (x 0) (y 0))"));
+
+  assert.ok(symbols.functions.has("POINT-X"));
+  assert.ok(symbols.functions.has("POINT-Y"));
+});
+
+test("marks :include as a structure we cannot model", () => {
+  const symbols = collectSymbols(
+    parseAll("(defstruct (child (:include parent)) z)"),
+  );
+
+  assert.equal(symbols.unmodelledStructures, true);
+});
+
+test("does not mark a plain defstruct as unmodelled", () => {
+  const symbols = collectSymbols(parseAll("(defstruct point x)"));
+
+  assert.equal(symbols.unmodelledStructures, false);
+});
