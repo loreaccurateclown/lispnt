@@ -2,13 +2,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parse, type AstNode } from "../src/core/reader";
 import { NIL, cons, intern, isNil, type LispValue } from "../src/core/values";
+import { LispEvalError } from "../src/core/errors";
 import {
   astToValue,
   createEnv,
   define,
   evaluate,
+  HARD_STEP_CEILING,
   lookup,
   withObserver,
+  withStepCeiling,
 } from "../src/core/interpreter";
 
 //LLM-written tests
@@ -745,4 +748,75 @@ test("evaluates a lambda inside the function special form", () => {
 
 test("rejects a function form with nothing in it", () => {
   assert.throws(() => run("(function)"));
+});
+
+function budgetCode(run: () => void): string | undefined {
+  try {
+    run();
+    return undefined;
+  } catch (error) {
+    if (error instanceof LispEvalError) return error.code;
+    throw error;
+  }
+}
+
+test("stops evaluation at a ceiling set for the pass", () => {
+  assert.equal(
+    budgetCode(() =>
+      withStepCeiling(3, () =>
+        evaluate(parse("(+ 1 (+ 2 3))"), createEnv(null)),
+      ),
+    ),
+    "evaluation-budget",
+  );
+});
+
+test("starts counting from zero for each pass", () => {
+  const first = budgetCode(() =>
+    withStepCeiling(3, () => evaluate(parse("(+ 1 (+ 2 3))"), createEnv(null))),
+  );
+  const second = budgetCode(() =>
+    withStepCeiling(3, () => evaluate(parse("(+ 1 (+ 2 3))"), createEnv(null))),
+  );
+
+  assert.equal(first, "evaluation-budget");
+  assert.equal(second, "evaluation-budget");
+});
+
+test("restores the backstop after a pass finishes", () => {
+  withStepCeiling(3, () => evaluate(parse("1"), createEnv(null)));
+
+  assert.equal(
+    budgetCode(() => evaluate(parse("(+ 1 (+ 2 3))"), createEnv(null))),
+    undefined,
+  );
+});
+
+test("restores the backstop after a pass throws", () => {
+  budgetCode(() =>
+    withStepCeiling(3, () => evaluate(parse("(+ 1 (+ 2 3))"), createEnv(null))),
+  );
+
+  assert.equal(
+    budgetCode(() => evaluate(parse("(+ 1 (+ 2 3))"), createEnv(null))),
+    undefined,
+  );
+});
+
+test("refuses a second ceiling while one is open", () => {
+  assert.throws(
+    () => withStepCeiling(5, () => withStepCeiling(5, () => undefined)),
+    /already open/,
+  );
+});
+
+test("rejects a ceiling outside one to the backstop", () => {
+  assert.throws(() => withStepCeiling(0, () => undefined), RangeError);
+  assert.throws(() => withStepCeiling(-1, () => undefined), RangeError);
+  assert.throws(() => withStepCeiling(1.5, () => undefined), RangeError);
+  assert.throws(() => withStepCeiling(Number.NaN, () => undefined), RangeError);
+  assert.throws(
+    () => withStepCeiling(HARD_STEP_CEILING + 1, () => undefined),
+    RangeError,
+  );
 });

@@ -8,8 +8,9 @@ import { LispEvalError } from "./errors";
 import {
   createEnv,
   evaluate,
-  resetEvaluationBudget,
+  HARD_STEP_CEILING,
   ReturnSignal,
+  withStepCeiling,
 } from "./interpreter";
 import { type AstNode, createReader } from "./reader";
 
@@ -55,42 +56,43 @@ export function analyze(source: string): Diagnostic[] {
     );
   });
 
-  resetEvaluationBudget();
-  const env = createEnv(null);
+  return withStepCeiling(HARD_STEP_CEILING, () => {
+    const env = createEnv(null);
 
-  for (const form of forms) {
-    if (isCoveredByDiagnostic(form, diagnostics)) continue;
+    for (const form of forms) {
+      if (isCoveredByDiagnostic(form, diagnostics)) continue;
 
-    try {
-      evaluate(form, env);
-    } catch (error) {
-      if (error instanceof LispEvalError) {
-        // A standard CL name Lispnt does not implement is our gap, not the
-        // learner's mistake, so it is not reported.
-        if (error.code === "unsupported-standard") continue;
-        if (error.code === "undefined-function" && loadsAnotherFile) continue;
-        diagnostics.push(diagnosticFromEvalError(error, form.start));
-        continue;
-      }
-      if (error instanceof ReturnSignal) continue;
-      // Deep recursion blows the JS stack before the step budget trips, so
-      // both failure modes surface as the same diagnostic.
-      if (error instanceof RangeError) {
-        diagnostics.push(
-          diagnosticFromEvalError(
-            new LispEvalError(
-              "evaluation-budget",
+      try {
+        evaluate(form, env);
+      } catch (error) {
+        if (error instanceof LispEvalError) {
+          // A standard CL name Lispnt does not implement is our gap, not the
+          // learner's mistake, so it is not reported.
+          if (error.code === "unsupported-standard") continue;
+          if (error.code === "undefined-function" && loadsAnotherFile) continue;
+          diagnostics.push(diagnosticFromEvalError(error, form.start));
+          continue;
+        }
+        if (error instanceof ReturnSignal) continue;
+        // Deep recursion blows the JS stack before the step budget trips, so
+        // both failure modes surface as the same diagnostic.
+        if (error instanceof RangeError) {
+          diagnostics.push(
+            diagnosticFromEvalError(
+              new LispEvalError(
+                "evaluation-budget",
+                form.start,
+                "This code recursed too deeply to check safely.",
+              ),
               form.start,
-              "This code recursed too deeply to check safely.",
             ),
-            form.start,
-          ),
-        );
-        continue;
+          );
+          continue;
+        }
+        throw error;
       }
-      throw error;
     }
-  }
 
-  return diagnostics;
+    return diagnostics;
+  });
 }

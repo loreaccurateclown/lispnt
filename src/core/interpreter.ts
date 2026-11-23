@@ -57,11 +57,37 @@ export function createEnv(parent: Env | null): Env {
   return env;
 }
 
-let steps = 0;
-const STEP_LIMIT = 2_000_000;
+export const HARD_STEP_CEILING = 2_000_000;
 
-export function resetEvaluationBudget(): void {
+let steps = 0;
+
+let stepCeiling = HARD_STEP_CEILING;
+
+let stepCeilingOpen = false;
+
+export function withStepCeiling<T>(requested: number, run: () => T): T {
+  if (
+    !Number.isInteger(requested) ||
+    requested < 1 ||
+    requested > HARD_STEP_CEILING
+  )
+    throw new RangeError(
+      `a step ceiling must be a whole number from 1 to ${HARD_STEP_CEILING}`,
+    );
+
+  if (stepCeilingOpen) throw new Error("a step ceiling is already open");
+
+  stepCeilingOpen = true;
   steps = 0;
+  stepCeiling = requested;
+
+  try {
+    return run();
+  } finally {
+    stepCeilingOpen = false;
+    steps = 0;
+    stepCeiling = HARD_STEP_CEILING;
+  }
 }
 
 export function evaluate(node: AstNode, env: Env  ): LispValue {
@@ -118,7 +144,7 @@ export function visibleBindings(env: Env  ): Map<string, LispValue> {
 
 function evaluateInner(node: AstNode, env: Env): LispValue {
   steps += 1;
-  if (steps > STEP_LIMIT)
+  if (steps > stepCeiling)
     throw new LispEvalError(
       "evaluation-budget",
       null,
