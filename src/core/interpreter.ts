@@ -16,9 +16,11 @@ import {
   builtins,
   consForm,
   expectNumber,
+  isEq,
   register,
 } from "./builtins";
 import { LispEvalError } from "./errors";
+import { printValue } from "./print";
 import { STANDARD_SYMBOLS } from "./standard-symbols";
 
 export class ReturnSignal {
@@ -116,6 +118,11 @@ export const SPECIAL_FORMS: ReadonlySet<string> = new Set([
   "LABELS",
   "DOLIST",
   "DOTIMES",
+  "DO",
+  "DO*",
+  "CASE",
+  "ECASE",
+  "CCASE",
   "DEFPARAMETER",
   "DEFVAR",
   "FUNCTION",
@@ -260,6 +267,16 @@ function evaluateInner(node: AstNode, env: Env): LispValue {
         return evalDolist(node, env);
       case "DOTIMES":
         return evalDotimes(node, env);
+      case "DO":
+        return evalDo(node, env, false);
+      case "DO*":
+        return evalDo(node, env, true);
+      case "CASE":
+        return evalCase(node, env, false);
+      case "ECASE":
+        return evalCase(node, env, true);
+      case "CCASE":
+        return evalCase(node, env, true);
       case "RETURN":
         return evalReturn(node, env);
       case "PUSH":
@@ -278,6 +295,8 @@ function evaluateInner(node: AstNode, env: Env): LispValue {
     return { kind: "number", value: Number(node.value) };
   if (node.atomType === "string")
     return { kind: "string", value: String(node.value) };
+  if (node.atomType === "char")
+    return { kind: "char", value: String(node.value) };
 
   const value = lookup(env, String(node.value));
   if (value === undefined) {
@@ -468,6 +487,136 @@ function evalDotimes(form: ListNode, env: Env): LispValue {
   const scope = createEnv(env);
   define(scope, name, { kind: "number", value: count });
   return resultNode === undefined ? NIL : evaluate(resultNode, scope);
+}
+
+// DO and DO* — bindings (var [init [step]]), an end clause (test result…), then a
+// body. DO evaluates every init in the enclosing environment before binding any
+// of them; DO* binds each as it goes. The end test runs before every iteration
+// and RETURN from the body leaves the loop, as it does in DOLIST.
+function evalDo(form: ListNode, env: Env, sequential: boolean): LispValue {
+  const bindingsNode = form.children[1];
+  const endNode = form.children[2];
+  const head = sequential ? "do*" : "do";
+
+  if (
+    bindingsNode === undefined ||
+    bindingsNode.kind !== "list" ||
+    bindingsNode.prefix !== undefined
+  )
+    throw new LispEvalError("malformed-form", null, `${head} needs a binding list`);
+
+  const scope = createEnv(env);
+  const names: string[] = [];
+  const inits: Array<AstNode | undefined> = [];
+  const steps: Array<AstNode | undefined> = [];
+
+  for (const binding of bindingsNode.children) {
+    const spec =
+      binding.kind === "list" && binding.prefix === undefined ? binding : undefined;
+    const nameNode = spec === undefined ? binding : spec.children[0];
+    const name = nameNode === undefined ? undefined : symbolName(nameNode);
+    if (name === undefined)
+      throw new LispEvalError(
+        "malformed-form",
+        null,
+        `${head} bindings need a variable name`,
+      );
+    names.push(name);
+    inits.push(spec?.children[1]);
+    steps.push(spec?.children[2]);
+  }
+
+  for (let index = 0; index < names.length; index += 1) {
+    const initNode = inits[index];
+    define(
+      scope,
+      names[index]!,
+      initNode === undefined ? NIL : evaluate(initNode, sequential ? scope : env),
+    );
+  }
+
+  const endClause =
+    endNode !== undefined && endNode.kind === "list" && endNode.prefix === undefined
+      ? endNode
+      : undefined;
+  const testNode = endClause?.children[0];
+  const resultNodes = endClause === undefined ? [] : endClause.children.slice(1);
+
+  for (;;) {
+    if (testNode !== undefined && isTruthy(evaluate(testNode, scope))) {
+      let result: LispValue = NIL;
+      for (const resultNode of resultNodes) result = evaluate(resultNode, scope);
+      return result;
+    }
+
+    try {
+      evaluateBody(form.children.slice(3), scope);
+    } catch (error) {
+      if (error instanceof ReturnSignal) return error.value;
+      throw error;
+    }
+
+    // DO computes every step against the same old bindings, then assigns them
+    // together; DO* assigns each before the next step is computed.
+    const stepped: Array<{ name: string; value: LispValue }> = [];
+    for (let index = 0; index < names.length; index += 1) {
+      const stepNode = steps[index];
+      if (stepNode === undefined) continue;
+      const value = evaluate(stepNode, scope);
+      if (sequential) define(scope, names[index]!, value);
+      else stepped.push({ name: names[index]!, value });
+    }
+    for (const entry of stepped) define(scope, entry.name, entry.value);
+  }
+}
+
+// CASE — the key form is evaluated once, then the clauses (keys body…) are tried
+// in order, with OTHERWISE and T as the default. ECASE and CCASE signal when
+// nothing matches; CL's CCASE would instead offer a restart to correct the key,
+// which Lispnt has no mechanism for, so it behaves as ECASE.
+function evalCase(form: ListNode, env: Env, signalOnMiss: boolean): LispValue {
+  const keyNode = form.children[1];
+  if (keyNode === undefined)
+    throw new LispEvalError("malformed-form", null, "case needs a key form");
+
+  const key = evaluate(keyNode, env);
+
+  for (const clause of form.children.slice(2)) {
+    if (clause.kind !== "list" || clause.prefix !== undefined)
+      throw new LispEvalError(
+        "malformed-form",
+        null,
+        "case clauses need to be lists",
+      );
+
+    const keysNode = clause.children[0];
+    if (keysNode === undefined)
+      throw new LispEvalError("malformed-form", null, "case clauses need keys");
+
+    if (caseClauseMatches(keysNode, key))
+      return evaluateBody(clause.children.slice(1), env);
+  }
+
+  if (signalOnMiss)
+    throw new LispEvalError(
+      "signalled-error",
+      null,
+      `case: no clause matches ${printValue(key)}`,
+    );
+  return NIL;
+}
+
+function caseClauseMatches(keysNode: AstNode, key: LispValue): boolean {
+  if (keysNode.kind === "atom" && keysNode.atomType === "symbol") {
+    const name = String(keysNode.value).toUpperCase();
+    if (name === "OTHERWISE" || name === "T") return true;
+    return isEq(astToValue(keysNode), key);
+  }
+
+  if (keysNode.kind === "list" && keysNode.prefix === undefined)
+    return keysNode.children.some((child) => isEq(astToValue(child), key));
+
+  return isEq(astToValue(keysNode), key);
 }
 
 function evalPush(form: ListNode, env: Env): LispValue {
@@ -973,6 +1122,8 @@ export function astToValue(node: AstNode): LispValue {
       return { kind: "number", value: Number(node.value) };
     if (node.atomType === "string")
       return { kind: "string", value: String(node.value) };
+    if (node.atomType === "char")
+      return { kind: "char", value: String(node.value) };
 
     return intern(String(node.value));
   }

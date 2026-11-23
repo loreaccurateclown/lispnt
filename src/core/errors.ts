@@ -33,7 +33,8 @@ export type EvalErrorCode =
   | "evaluation-budget"
   | "unbound-variable"
   | "undefined-function"
-  | "unsupported-standard";
+  | "unsupported-standard"
+  | "signalled-error"; //(error …) in the learner's own code
 
 export type ReaderErrorCode =
   | "empty-input" //parsing trivia

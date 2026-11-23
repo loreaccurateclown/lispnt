@@ -34,6 +34,8 @@ function render(value: LispValue, depth: number, state: PrintState): string {
       return String(value.value);
     case "string":
       return quoteString(value.value);
+    case "char":
+      return renderChar(value.value);
     case "builtin":
       return `#<builtin ${value.name}>`;
     case "function":
@@ -49,6 +51,15 @@ function render(value: LispValue, depth: number, state: PrintState): string {
 
 function quoteString(text: string): string {
   return '"' + text.replaceAll("\\", "\\\\").replaceAll('"', '\\"') + '"';
+}
+
+// SBCL prints a space as #\ followed by an invisible space; the name is
+// easier to read and reads back identically, so it is printed by name here.
+function renderChar(char: string): string {
+  if (char === " ") return "#\\Space";
+  if (char === "\n") return "#\\Newline";
+  if (char === "\t") return "#\\Tab";
+  return `#\\${char}`;
 }
 
 function renderCons(

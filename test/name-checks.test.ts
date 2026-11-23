@@ -311,3 +311,16 @@ test("walks an otherwise clause body", () => {
     ["undefined-function"],
   );
 });
+
+test("does not read do or the case family as function calls", () => {
+  assert.deepEqual(
+    codes("(defun f (n) (do ((i 0 (+ i 1))) ((= i n) i)) (case n (1 'one) (otherwise 'other)))"),
+    [],
+  );
+});
+
+test("checks the argument count of a builtin it now implements", () => {
+  assert.deepEqual(codes("(defun f () (1+ 1 2))"), ["arity"]);
+  assert.deepEqual(codes("(defun f (x) (schar x))"), ["arity"]);
+  assert.deepEqual(codes("(defun f () (1+ 1))"), []);
+});

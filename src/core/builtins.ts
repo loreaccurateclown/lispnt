@@ -1,4 +1,5 @@
 import { LispEvalError } from "./errors";
+import { printValue } from "./print";
 import {
   ArrayValue,
   BuiltInValue,
@@ -49,6 +50,28 @@ export function expectArray(value: LispValue): ArrayValue {
   return value;
 }
 
+export function expectStringValue(value: LispValue): string {
+  if (value.kind !== "string")
+    throw new LispEvalError("type-error", null, `expected a string, got ${value.kind}`);
+  return value.value;
+}
+
+export function expectCharValue(value: LispValue): string {
+  if (value.kind !== "char")
+    throw new LispEvalError("type-error", null, `expected a character, got ${value.kind}`);
+  return value.value;
+}
+
+// SCHAR and CHAR agree here: both read one character and both reject an index
+// outside the string.
+function charAt(sequence: LispValue, index: LispValue, name: string): LispValue {
+  const text = expectStringValue(sequence);
+  const at = expectInteger(index);
+  if (at < 0 || at >= text.length)
+    throw new LispEvalError("index-error", null, `${name}: index ${at} out of range`);
+  return { kind: "char", value: text[at]! };
+}
+
 //don't confuse this from with form
 function listFrom(items: LispValue[], tail: LispValue = NIL): LispValue {
   let result: LispValue = tail;
@@ -71,11 +94,15 @@ export function consForm(value: LispValue): LispValue[] {
   return items;
 }
 
-function isEq(left: LispValue, right: LispValue): boolean {
+export function isEq(left: LispValue, right: LispValue): boolean {
   if (left === right) return true; //because it is
   if (left.kind === "number" && right.kind === "number")
     return left.value === right.value;
   if (left.kind === "string" && right.kind === "string")
+    return left.value === right.value;
+  // SBCL answers EQ true for two characters with the same code, though the
+  // standard only promises EQL.
+  if (left.kind === "char" && right.kind === "char")
     return left.value === right.value;
 
   return false; //because it isn't
@@ -316,4 +343,119 @@ register("SQRT", 1, 1, (args) => {
       "SQRT: cannot take the square root of a negative number",
     );
   return { kind: "number", value: Math.sqrt(value) };
+});
+
+//LLM-written registrations for the evaluator-gap slice
+register("1+", 1, 1, (args) => ({
+  kind: "number",
+  value: expectNumber(args[0]!) + 1,
+}));
+
+register("1-", 1, 1, (args) => ({
+  kind: "number",
+  value: expectNumber(args[0]!) - 1,
+}));
+
+register("MAX", 1, null, (args) => {
+  let best = expectNumber(args[0]!);
+  for (const arg of args.slice(1)) best = Math.max(best, expectNumber(arg));
+  return { kind: "number", value: best };
+});
+
+register("MIN", 1, null, (args) => {
+  let best = expectNumber(args[0]!);
+  for (const arg of args.slice(1)) best = Math.min(best, expectNumber(arg));
+  return { kind: "number", value: best };
+});
+
+// CL's COUNT takes :test, :key, :start, :end and :from-end. Lispnt has no
+// keyword arguments anywhere, so this is the two-argument form and the arity
+// check is what a keyword call meets.
+register("COUNT", 2, 2, (args) => {
+  const item = args[0]!;
+  const sequence = args[1]!;
+  const items =
+    sequence.kind === "array" ? sequence.elements : consForm(sequence);
+  let total = 0;
+  for (const candidate of items) if (isEqual(candidate, item)) total += 1;
+  return { kind: "number", value: total };
+});
+
+register("BUTLAST", 1, 2, (args) => {
+  const items = consForm(args[0]!);
+  const count = args[1] === undefined ? 1 : expectInteger(args[1]);
+  const keep = Math.max(0, items.length - Math.max(0, count));
+  return listFrom(items.slice(0, keep));
+});
+
+register("SCHAR", 2, 2, (args) => charAt(args[0]!, args[1]!, "SCHAR"));
+register("CHAR", 2, 2, (args) => charAt(args[0]!, args[1]!, "CHAR"));
+
+register("CHAR=", 2, 2, (args) =>
+  expectCharValue(args[0]!) === expectCharValue(args[1]!)
+    ? intern("T")
+    : NIL,
+);
+
+register("CHAR-UPCASE", 1, 1, (args) => {
+  const character = expectCharValue(args[0]!);
+  const upper = character.toUpperCase();
+  // A single character's uppercase form is not always one character (ß), and a
+  // value here must stay one character.
+  return { kind: "char", value: upper.length === 1 ? upper : character };
+});
+
+register("ERROR", 1, null, (args) => {
+  const datum = args[0]!;
+  const text = datum.kind === "string" ? datum.value : printValue(datum);
+  const extras = args.slice(1).map((arg) => printValue(arg));
+  throw new LispEvalError(
+    "signalled-error",
+    null,
+    extras.length === 0 ? text : `${text} ${extras.join(" ")}`,
+  );
+});
+
+// A type specifier is normally a quoted symbol, so the table is keyed by name.
+// Anything not in it — compound specifiers such as (integer 0 10) or (or …), and
+// struct type names — is Lispnt's gap, not the learner's mistake: it is reported
+// as unsupported-standard so analyze stays quiet rather than answering NIL.
+const typePredicates = new Map<string, (value: LispValue) => boolean>([
+  ["T", () => true],
+  ["NIL", (value) => isNil(value)],
+  ["NULL", (value) => isNil(value)],
+  ["SYMBOL", (value) => value.kind === "symbol" || isNil(value)],
+  ["KEYWORD", (value) => value.kind === "symbol" && value.name.startsWith(":")],
+  ["NUMBER", (value) => value.kind === "number"],
+  ["INTEGER", (value) => value.kind === "number" && Number.isInteger(value.value)],
+  ["RATIONAL", (value) => value.kind === "number" && Number.isInteger(value.value)],
+  ["FLOAT", (value) => value.kind === "number" && !Number.isInteger(value.value)],
+  ["LIST", (value) => value.kind === "cons" || isNil(value)],
+  ["CONS", (value) => value.kind === "cons"],
+  ["ATOM", (value) => value.kind !== "cons"],
+  ["ARRAY", (value) => value.kind === "array"],
+  ["VECTOR", (value) => value.kind === "array"],
+  ["STRING", (value) => value.kind === "string"],
+  ["CHARACTER", (value) => value.kind === "char"],
+  ["FUNCTION", (value) => value.kind === "function" || value.kind === "builtin"],
+]);
+
+register("TYPEP", 2, 2, (args) => {
+  const specifier = args[1]!;
+  if (specifier.kind !== "symbol")
+    throw new LispEvalError(
+      "unsupported-standard",
+      null,
+      `TYPEP: Lispnt answers type specifiers written as a symbol, got ${specifier.kind}`,
+    );
+
+  const predicate = typePredicates.get(specifier.name);
+  if (predicate === undefined)
+    throw new LispEvalError(
+      "unsupported-standard",
+      null,
+      `TYPEP: Lispnt does not know the type specifier ${specifier.name}`,
+    );
+
+  return predicate(args[0]!) ? intern("T") : NIL;
 });

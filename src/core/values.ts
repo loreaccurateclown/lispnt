@@ -3,6 +3,10 @@ import { AstNode } from "./reader";
 export type SymbolValue = { kind: "symbol"; name: string };
 export type NumberValue = { kind: "number"; value: number };
 export type StringValue = { kind: "string"; value: string };
+// A character is its own type in Common Lisp: not a string, not a number, and
+// case matters (#\a and #\A are different characters). The value is the single
+// character itself, never the name a reader used to write it.
+export type CharValue = { kind: "char"; value: string };
 export type NilValue = { kind: "nil" };
 export type ConsValue = { kind: "cons"; car: LispValue; cdr: LispValue };
 
@@ -22,6 +26,7 @@ export type LispValue =
   | SymbolValue
   | NumberValue
   | StringValue
+  | CharValue
   | NilValue
   | ConsValue
   | ArrayValue

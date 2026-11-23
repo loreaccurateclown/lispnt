@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { parse, type AstNode } from "../src/core/reader";
 import { NIL, cons, intern, isNil, type LispValue } from "../src/core/values";
 import { LispEvalError } from "../src/core/errors";
+import { printValue } from "../src/core/print";
 import {
   astToValue,
   createEnv,
@@ -19,6 +20,10 @@ import {
 //LLM-written tests
 function num(value: number): LispValue {
   return { kind: "number", value };
+}
+
+function printValueOf(source: string): string {
+  return printValue(evaluate(parse(source), createEnv(null)));
 }
 
 function expectCons(value: LispValue) {
@@ -861,4 +866,200 @@ test("leaves a dotimes counter bound for the result form", () => {
 test("binds a dolist variable to NIL for the result form", () => {
   assert.deepEqual(run("(dolist (x (list 1 2) (list x)) nil)"), cons(NIL, NIL));
   assert.deepEqual(run("(dolist (x (list 1 2) x) nil)"), NIL);
+});
+
+//LLM-written tests for the character type and the evaluator-gap slice
+function char(value: string): LispValue {
+  return { kind: "char", value };
+}
+
+function evalIn(source: string): LispValue {
+  return evaluate(parse(source), createEnv(null));
+}
+
+test("evaluates a character literal", () => {
+  assert.deepEqual(evalIn("#\\a"), char("a"));
+});
+
+test("quotes a character literal as itself", () => {
+  assert.deepEqual(evalIn("'#\\a"), char("a"));
+});
+
+test("compares characters by value and by case", () => {
+  assert.deepEqual(evalIn("(equal #\\a #\\a)"), intern("T"));
+  assert.deepEqual(evalIn("(equal #\\a #\\A)"), NIL);
+});
+
+test("does not confuse a character with a string", () => {
+  assert.deepEqual(evalIn('(equal #\\a "a")'), NIL);
+  assert.deepEqual(evalIn('(eq #\\a "a")'), NIL);
+});
+
+test("treats a character as an atom", () => {
+  assert.deepEqual(evalIn("(atom #\\a)"), intern("T"));
+  assert.deepEqual(evalIn("(typep #\\a 'character)"), intern("T"));
+  assert.deepEqual(evalIn("(typep #\\a 'string)"), NIL);
+});
+
+test("adds and subtracts one", () => {
+  assert.deepEqual(evalIn("(1+ 41)"), num(42));
+  assert.deepEqual(evalIn("(1- 41)"), num(40));
+});
+
+test("takes the largest and smallest", () => {
+  assert.deepEqual(evalIn("(max 3 9 5)"), num(9));
+  assert.deepEqual(evalIn("(min 3 9 5)"), num(3));
+  assert.deepEqual(evalIn("(max 7)"), num(7));
+});
+
+test("counts matches in a list and in a vector", () => {
+  assert.deepEqual(evalIn("(count 3 '(1 3 2 3))"), num(2));
+  assert.deepEqual(evalIn("(count 3 #(3 3))"), num(2));
+  assert.deepEqual(evalIn("(count '(1) (list '(1) '(2)))"), num(1));
+});
+
+test("drops the last element, or the last n", () => {
+  assert.deepEqual(printValueOf("(butlast '(1 2 3 4))"), "(1 2 3)");
+  assert.deepEqual(printValueOf("(butlast '(1 2 3 4) 2)"), "(1 2)");
+  assert.deepEqual(printValueOf("(butlast '(1))"), "NIL");
+  assert.deepEqual(printValueOf("(butlast '(1) 5)"), "NIL");
+});
+
+test("reads a character out of a string", () => {
+  assert.deepEqual(evalIn('(schar "banana" 0)'), char("b"));
+  assert.deepEqual(evalIn('(char "banana" 5)'), char("a"));
+});
+
+test("rejects an index outside the string", () => {
+  assert.throws(() => evalIn('(schar "banana" 6)'), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "index-error";
+  });
+  assert.throws(() => evalIn('(char "banana" -1)'), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "index-error";
+  });
+});
+
+test("rejects a non-character where one is needed", () => {
+  assert.throws(() => evalIn('(char= "a" #\\a)'), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "type-error";
+  });
+});
+
+test("compares and upcases characters", () => {
+  assert.deepEqual(evalIn("(char= #\\a #\\a)"), intern("T"));
+  assert.deepEqual(evalIn("(char= #\\a #\\A)"), NIL);
+  assert.deepEqual(evalIn("(char-upcase #\\a)"), char("A"));
+  assert.deepEqual(evalIn("(char-upcase #\\A)"), char("A"));
+});
+
+test("signals the learner's own error with its message", () => {
+  assert.throws(
+    () => evalIn('(error "Backing array is full.")'),
+    (error: unknown) => {
+      return (
+        error instanceof LispEvalError &&
+        error.code === "signalled-error" &&
+        error.message === "Backing array is full."
+      );
+    },
+  );
+});
+
+test("appends extra error arguments to the message", () => {
+  assert.throws(
+    () => evalIn('(error "Tried to remove" (quote x))'),
+    (error: unknown) => {
+      return error instanceof LispEvalError && error.message === "Tried to remove X";
+    },
+  );
+});
+
+test("answers a plain type specifier", () => {
+  assert.deepEqual(evalIn("(typep 3 'integer)"), intern("T"));
+  assert.deepEqual(evalIn("(typep 3.5 'integer)"), NIL);
+  assert.deepEqual(evalIn('(typep "s" \'string)'), intern("T"));
+  assert.deepEqual(evalIn("(typep nil 'null)"), intern("T"));
+  assert.deepEqual(evalIn("(typep nil 'symbol)"), intern("T"));
+  assert.deepEqual(evalIn("(typep nil 'list)"), intern("T"));
+  assert.deepEqual(evalIn("(typep nil 'cons)"), NIL);
+  assert.deepEqual(evalIn("(typep '(1) 'cons)"), intern("T"));
+  assert.deepEqual(evalIn("(typep 5 'atom)"), intern("T"));
+  assert.deepEqual(evalIn("(typep 5 't)"), intern("T"));
+});
+
+test("refuses a type specifier it does not model", () => {
+  assert.throws(() => evalIn("(typep 3 '(integer 0 10))"), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "unsupported-standard";
+  });
+  assert.throws(() => evalIn("(typep 3 'tree-node)"), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "unsupported-standard";
+  });
+});
+
+test("runs do to its end test", () => {
+  assert.deepEqual(evalIn("(do ((i 0 (+ i 1))) ((= i 3) i))"), num(3));
+});
+
+test("evaluates do steps against the old bindings", () => {
+  assert.equal(
+    printValueOf("(do ((i 0 (+ i 1)) (acc nil (cons i acc))) ((= i 3) acc))"),
+    "(2 1 0)",
+  );
+});
+
+test("binds do* as it goes", () => {
+  // DO* lets a later initial form see an earlier binding; DO evaluates every
+  // initial form in the enclosing environment, where i has no value at all.
+  assert.deepEqual(evalIn("(do* ((i 5) (j i)) ((= i 5) j))"), num(5));
+  assert.throws(() => evalIn("(do ((i 5) (j i)) ((= i 5) j))"), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "unbound-variable";
+  });
+});
+
+test("leaves do when the body returns", () => {
+  assert.deepEqual(
+    evalIn("(do ((i 0 (+ i 1))) ((= i 5) i) (when (= i 2) (return 42)))"),
+    num(42),
+  );
+});
+
+test("runs a do body with no end test until a budget stops it", () => {
+  assert.throws(
+    () => withStepCeiling(1000, () => evalIn("(do ((i 0 (+ i 1))) ())")),
+    (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "evaluation-budget";
+    },
+  );
+});
+
+test("rejects a malformed do", () => {
+  assert.throws(() => evalIn("(do)"), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "malformed-form";
+  });
+  assert.throws(() => evalIn("(do 5 ((= 1 1)) 1)"), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "malformed-form";
+  });
+});
+
+test("matches a case clause, the default, and a key list", () => {
+  assert.deepEqual(evalIn("(case 2 (1 'one) (2 'two) (otherwise 'other))"), intern("TWO"));
+  assert.deepEqual(evalIn("(case 9 (1 'one) (otherwise 'other))"), intern("OTHER"));
+  assert.deepEqual(evalIn("(case 'b ((a b) 'hit) (t 'miss))"), intern("HIT"));
+  assert.deepEqual(evalIn("(case 9 (1 'one))"), NIL);
+});
+
+test("signals from ecase and ccase when nothing matches", () => {
+  assert.throws(() => evalIn("(ecase 9 (1 'one))"), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "signalled-error";
+  });
+  assert.throws(() => evalIn("(ccase 9 (1 'one))"), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "signalled-error";
+  });
+  assert.deepEqual(evalIn("(ccase 1 (1 'one))"), intern("ONE"));
+});
+
+test("lists do and the case family as special forms", () => {
+  for (const name of ["DO", "DO*", "CASE", "ECASE", "CCASE"]) {
+    assert.ok(SPECIAL_FORMS.has(name), `${name} should be a special form`);
+  }
 });

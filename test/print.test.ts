@@ -232,3 +232,21 @@ test("does not share state between two calls", () => {
   printValue(longList(9));
   assert.equal(printValue(list(num(1), num(2))), "(1 2)");
 });
+
+test("prints a character", () => {
+  assert.equal(printValue({ kind: "char", value: "a" }), "#\\a");
+  assert.equal(printValue({ kind: "char", value: "A" }), "#\\A");
+});
+
+test("prints a named character by name", () => {
+  assert.equal(printValue({ kind: "char", value: " " }), "#\\Space");
+  assert.equal(printValue({ kind: "char", value: "\n" }), "#\\Newline");
+  assert.equal(printValue({ kind: "char", value: "\t" }), "#\\Tab");
+});
+
+test("prints a character inside a list and a vector", () => {
+  assert.equal(
+    printValue(list({ kind: "char", value: "a" }, { kind: "char", value: " " })),
+    "(#\\a #\\Space)",
+  );
+});

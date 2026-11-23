@@ -620,13 +620,13 @@ test("keeps the #( prefix off enclosing and sibling forms", () => {
   });
 });
 
-test("still parses a # not followed by a paren as an atom", () => {
+test("parses a # not followed by a paren as a character", () => {
   const node = parse("#\\a");
 
   assert.deepEqual(node, {
     kind: "atom",
-    atomType: "symbol",
-    value: "#\\a",
+    atomType: "char",
+    value: "a",
     start: { line: 1, column: 1, offset: 0 },
   });
 });
@@ -882,4 +882,61 @@ test("rejects a function quote with nothing to quote", () => {
 
   assert.equal(error.code, "unexpected-eof");
   assert.deepEqual(error.position, { line: 1, column: 3, offset: 2 });
+});
+
+//LLM-written tests for the character type
+test("keeps the case of a character", () => {
+  const lower = parse("#\\a");
+  const upper = parse("#\\A");
+
+  assert.equal(lower.kind === "atom" ? lower.value : undefined, "a");
+  assert.equal(upper.kind === "atom" ? upper.value : undefined, "A");
+});
+
+test("reads a character by name", () => {
+  const space = parse("#\\Space");
+  const newline = parse("#\\Newline");
+  const tab = parse("#\\Tab");
+
+  assert.equal(space.kind === "atom" ? space.value : undefined, " ");
+  assert.equal(newline.kind === "atom" ? newline.value : undefined, "\n");
+  assert.equal(tab.kind === "atom" ? tab.value : undefined, "\t");
+});
+
+test("reads a character name in any case", () => {
+  const space = parse("#\\SPACE");
+
+  assert.equal(space.kind === "atom" ? space.atomType : undefined, "char");
+  assert.equal(space.kind === "atom" ? space.value : undefined, " ");
+});
+
+test("reads a delimiter as a character", () => {
+  const open = parse("#\\(");
+  const close = parse("#\\)");
+
+  assert.equal(open.kind === "atom" ? open.atomType : undefined, "char");
+  assert.equal(open.kind === "atom" ? open.value : undefined, "(");
+  assert.equal(close.kind === "atom" ? close.value : undefined, ")");
+});
+
+test("keeps a character inside a list from ending it", () => {
+  const node = parse("(#\\) #\\a)");
+
+  assert.equal(node.kind, "list");
+  if (node.kind !== "list") return;
+  assert.equal(node.children.length, 2);
+  assert.equal(node.children[0]?.kind === "atom" ? node.children[0].value : undefined, ")");
+});
+
+test("leaves a bare #\ as a symbol", () => {
+  const node = parse("#\\");
+
+  assert.equal(node.kind === "atom" ? node.atomType : undefined, "symbol");
+});
+
+test("leaves a character name it does not know as a symbol", () => {
+  const node = parse("#\\Foo");
+
+  assert.equal(node.kind === "atom" ? node.atomType : undefined, "symbol");
+  assert.equal(node.kind === "atom" ? node.value : undefined, "#\\Foo");
 });

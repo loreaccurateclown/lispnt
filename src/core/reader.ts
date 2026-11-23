@@ -9,7 +9,7 @@ export interface Position {
 
 export interface AtomNode {
   readonly kind: "atom";
-  readonly atomType: "symbol" | "number" | "string"; //This is apparently needed due to JS treating string values and Lisp symbols as equivalent.
+  readonly atomType: "symbol" | "number" | "string" | "char"; //This is apparently needed due to JS treating string values and Lisp symbols as equivalent.
   readonly value: unknown;
   readonly start: Position;
 }
@@ -46,6 +46,15 @@ export type NextResult = //for Slice 3 - recovery after analysis
 
 const carriageReturnsAndSpaces = [" ", "\t", "\n", "\r"]; //Is there an award for worst var names
 const atomDelimiters = [...carriageReturnsAndSpaces, "(", ")"]; //spread operator pretty cool! fish wants a helper function but idk
+
+// Characters that cannot be written as themselves after #\, because the reader
+// would consume the character as whitespace or structure. Names are matched
+// case-insensitively, as in CL; a single character is taken literally.
+const namedChars = new Map<string, string>([
+  ["SPACE", " "],
+  ["NEWLINE", "\n"],
+  ["TAB", "\t"],
+]);
 
 export function parse(source: string): AstNode {
   //this used to be createReader, then fish told me to turn it into a factory
@@ -181,6 +190,43 @@ export function createReader(source: string): Reader {
     };
   }
 
+  // #\a / #\A / #\Space. A character is one character taken literally, case
+  // preserved; longer text is a character name. A name we do not know, or a
+  // lone #\, stays the symbol it used to be rather than inventing a reader
+  // error for syntax CL accepts but we do not model.
+  function readChar(): AtomNode {
+    const start = here();
+    advance(); //past "#"
+    advance(); //past "\"
+
+    const first = peek();
+    if (first === undefined)
+      return { kind: "atom", atomType: "symbol", value: "#\\", start };
+
+    if (atomDelimiters.includes(first) || first === '"') {
+      advance();
+      return { kind: "atom", atomType: "char", value: first, start };
+    }
+
+    const chars: string[] = [];
+    let ch = peek();
+    while (ch !== undefined && !atomDelimiters.includes(ch)) {
+      chars.push(ch);
+      advance();
+      ch = peek();
+    }
+    const text = chars.join("");
+
+    if (text.length === 1)
+      return { kind: "atom", atomType: "char", value: text, start };
+
+    const named = namedChars.get(text.toUpperCase());
+    if (named !== undefined)
+      return { kind: "atom", atomType: "char", value: named, start };
+
+    return { kind: "atom", atomType: "symbol", value: `#\\${text}`, start };
+  }
+
   function readNode(): AstNode {
     //apparently you can just declare your return type as a union... TypeScript is crazy
     skipTrivia(); //move past no-op's
@@ -211,6 +257,7 @@ export function createReader(source: string): Reader {
           return readList(start, "#(");
         }
         if (peekAt(1) === "'") return readQuote("#'", 2);
+        if (peekAt(1) === "\\") return readChar();
         return readAtom();
       default: //Good explanation for switch efficiency vs a big if statement: you can check all conditionals immediately with an if,
         //while a switch will ALWAYS have to check the upper cases before resolving to our common form.

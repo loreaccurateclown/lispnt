@@ -53,7 +53,9 @@ export function diagnosticFromEvalError(
   return {
     code: error.code,
     severity: "error",
-    message: evalMessage(error.code),
+    // A signalled error carries the learner's own message, which is the point
+    // of calling (error "…").
+    message: error.code === "signalled-error" ? error.message : evalMessage(error.code),
     position: error.position ?? fallback,
   };
 }
@@ -80,6 +82,8 @@ function evalMessage(code: EvalErrorCode): string {
       return "No function with this name is defined. Check the spelling, or define it with defun.";
     case "unsupported-standard":
       return "Lispnt does not implement this standard Common Lisp function yet.";
+    case "signalled-error":
+      return "This code signals an error.";
   }
 }
 
