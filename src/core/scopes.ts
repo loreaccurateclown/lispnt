@@ -114,6 +114,19 @@ export function walkWithScopes(
       case "DOTIMES":
         visitLoop(node, current);
         return;
+      case "DO":
+        visitDo(node, current, false);
+        return;
+      case "DO*":
+        visitDo(node, current, true);
+        return;
+      case "CASE":
+      case "ECASE":
+      case "CCASE":
+      case "TYPECASE":
+      case "ETYPECASE":
+        visitCase(node, current);
+        return;
       case "COND":
         visitConditional(node, current);
         return;
@@ -305,6 +318,65 @@ export function walkWithScopes(
       }
 
       codeFollows = word !== undefined && LOOP_CODE_KEYWORDS.has(word);
+    }
+  }
+
+  function visitDo(node: ListNode, current: Scope, sequential: boolean): void {
+    const bindingsNode = node.children[1];
+    const endNode = node.children[2];
+    const inner = childScope(current);
+    const bindings: Array<
+      [AstNode | undefined, AstNode | undefined, AstNode | undefined]
+    > = [];
+
+    if (bindingsNode !== undefined && bindingsNode.kind === "list") {
+      for (const binding of bindingsNode.children) {
+        if (binding.kind === "list" && binding.prefix === undefined) {
+          bindings.push([
+            binding.children[0],
+            binding.children[1],
+            binding.children[2],
+          ]);
+        } else {
+          bindings.push([binding, undefined, undefined]);
+        }
+      }
+    }
+
+    for (const [nameNode, initNode] of bindings) {
+      // do evaluates every init before binding; do* binds as it goes.
+      if (initNode !== undefined) visit(initNode, sequential ? inner : current);
+      if (sequential) bindVariable(inner, nameNode, "local");
+    }
+
+    if (!sequential) {
+      for (const [nameNode] of bindings) bindVariable(inner, nameNode, "local");
+    }
+
+    if (endNode !== undefined && endNode.kind === "list") {
+      const [testNode, ...resultNodes] = endNode.children;
+      if (testNode !== undefined) visit(testNode, inner);
+      for (const resultNode of resultNodes) visit(resultNode, inner);
+    }
+
+    for (const [, , stepNode] of bindings) {
+      if (stepNode !== undefined) visit(stepNode, inner);
+    }
+
+    for (const form of node.children.slice(3)) visit(form, inner);
+  }
+
+  function visitCase(node: ListNode, current: Scope): void {
+    const keyNode = node.children[1];
+    if (keyNode !== undefined) visit(keyNode, current);
+
+    for (const clause of node.children.slice(2)) {
+      if (clause.kind === "list" && clause.prefix === undefined) {
+        // The first element holds the keys or a type spec, not code.
+        for (const form of clause.children.slice(1)) visit(form, current);
+      } else {
+        visit(clause, current);
+      }
     }
   }
 
@@ -704,13 +776,6 @@ const LOOP_CODE_KEYWORDS: ReadonlySet<string> = new Set([
 // keywords would otherwise be read as ordinary code, so the walk stops here.
 // Each entry is a candidate for decoding later; until then its body is unchecked.
 export const OPAQUE_FORMS: ReadonlySet<string> = new Set([
-  "DO",
-  "DO*",
-  "CASE",
-  "ECASE",
-  "CCASE",
-  "TYPECASE",
-  "ETYPECASE",
   "DEFSTRUCT",
   "DEFCLASS",
   "DEFGENERIC",

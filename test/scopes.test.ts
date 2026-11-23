@@ -333,3 +333,40 @@ test("does not mark a plain defstruct as unmodelled", () => {
 
   assert.equal(symbols.unmodelledStructures, false);
 });
+
+test("binds a do variable in its test, step, result and body", () => {
+  const source = "(do ((i 0 (+ i 1))) ((= i 3) i) (print i))";
+  const offsets = [
+    source.indexOf("i 1"),
+    source.indexOf("i 3"),
+    source.indexOf("3) i") + 3,
+    source.lastIndexOf("i)"),
+  ];
+
+  for (const offset of offsets) {
+    assert.equal(lookupVariable(scopeAt(source, offset), "I")?.kind, "local");
+  }
+});
+
+test("walks do inits outside the variables", () => {
+  const source = "(do ((i (foo))) ((= i 1) i))";
+  const init = scopeAt(source, source.indexOf("(foo)"));
+
+  assert.equal(lookupVariable(init, "I"), undefined);
+});
+
+test("lets do* inits see earlier variables", () => {
+  const source = "(do* ((a 1) (b a)) ((= b 1) b))";
+  const init = scopeAt(source, source.indexOf("b a") + 2);
+
+  assert.equal(lookupVariable(init, "A")?.kind, "local");
+});
+
+test("walks case clause bodies and not their keys", () => {
+  const source = "(case x ((1 2) (print y)) (t (print z)))";
+  const scopes = scopesByOffset(source);
+
+  assert.equal(scopes.has(source.indexOf("(1 2)")), false);
+  assert.equal(scopes.has(source.indexOf("y)")), true);
+  assert.equal(scopes.has(source.indexOf("z)")), true);
+});

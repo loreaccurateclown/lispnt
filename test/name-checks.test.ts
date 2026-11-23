@@ -226,3 +226,32 @@ test("stays quiet about undefined names when a structure is not modelled", () =>
     [],
   );
 });
+
+test("accepts correct do code", () => {
+  assert.deepEqual(
+    codes("(defun f (n) (do ((i 0 (+ i 1))) ((= i n) i) (print i)))"),
+    [],
+  );
+});
+
+test("reports an unbound variable in a do body", () => {
+  assert.deepEqual(
+    codes("(do ((i 0 (+ i 1))) ((= i 3) i) (print missing))"),
+    ["unbound-variable"],
+  );
+});
+
+test("reports a wrong arity inside a case clause body", () => {
+  assert.deepEqual(codes("(defun f (x) (case x (1 (car 1 2))))"), ["arity"]);
+});
+
+test("does not read case keys as calls", () => {
+  assert.deepEqual(codes("(defun f (x) (case x ((foo) 1)))"), []);
+});
+
+test("walks an otherwise clause body", () => {
+  assert.deepEqual(
+    codes("(defun f (x) (case x (otherwise (missing))))"),
+    ["undefined-function"],
+  );
+});
