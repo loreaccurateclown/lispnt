@@ -112,3 +112,29 @@ export function traceCalls(source: string): TraceResult {
   if (failed !== undefined) return { frames: roots, truncated, failed };
   return { frames: roots, truncated };
 }
+
+export function renderTrace(result: TraceResult): string {
+  const lines: string[] = result.frames.map((frame) => renderFrame(frame, 0));
+
+  if (result.unavailable === "unparsed") lines.push("… could not parse");
+  else if (result.unavailable === "budget") lines.push("… stopped: budget");
+  else if (result.failed !== undefined) lines.push(`… stopped: ${result.failed}`);
+
+  if (result.truncated) lines.push("… trace truncated");
+
+  return lines.join("\n");
+}
+
+function renderFrame(frame: TraceFrame, depth: number): string {
+  const indent = "  ".repeat(depth);
+  let line = `${indent}${frame.name}(${frame.args.join(", ")})`;
+
+  if (frame.result !== undefined) line += ` => ${frame.result}`;
+  if (frame.error !== undefined) line += ` !! ${frame.error}`;
+
+  for (const child of frame.children) {
+    line += `\n${renderFrame(child, depth + 1)}`;
+  }
+
+  return line;
+}

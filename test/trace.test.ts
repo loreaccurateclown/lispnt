@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { traceCalls, type TraceFrame } from "../src/core/trace";
+import { renderTrace, traceCalls, type TraceFrame } from "../src/core/trace";
 
 //LLM-written tests
 function depth(frame: TraceFrame): number {
@@ -111,4 +111,57 @@ test("nests a recursive call", () => {
 
   assert.equal(result.frames[0]?.name, "FACT");
   assert.equal(depth(result.frames[0]!), 4);
+});
+
+test("renders a single frame with its result", () => {
+  assert.equal(renderTrace(traceCalls("(defun f (x) (* x 2)) (f 5)")), "F(5) => 10");
+});
+
+test("indents a child by two spaces", () => {
+  const text = renderTrace(
+    traceCalls("(defun g (x) x) (defun f (x) (g x)) (f 5)"),
+  );
+
+  assert.equal(text, "F(5) => 5\n  G(5) => 5");
+});
+
+test("joins several arguments with a comma", () => {
+  const text = renderTrace(
+    traceCalls("(defun add (a b) (+ a b)) (add 1 2)"),
+  );
+
+  assert.equal(text, "ADD(1, 2) => 3");
+});
+
+test("marks the failing frame with its error code", () => {
+  const text = renderTrace(
+    traceCalls("(defun g () (car 1)) (defun f () (g)) (f)"),
+  );
+
+  assert.equal(text, "F()\n  G() !! type-error\n… stopped: type-error");
+});
+
+test("shows the truncation footer", () => {
+  const text = renderTrace(
+    traceCalls("(defun r (n) (if (= n 0) 0 (r (- n 1)))) (r 90)"),
+  );
+
+  assert.match(text, /… trace truncated/);
+});
+
+test("shows the budget footer", () => {
+  assert.equal(
+    renderTrace(traceCalls("(dotimes (i 100000000) 1)")),
+    "… stopped: budget",
+  );
+});
+
+test("renders nothing for an empty trace", () => {
+  assert.equal(renderTrace(traceCalls("(car (list 1 2))")), "");
+});
+
+test("renders several roots on consecutive lines", () => {
+  const text = renderTrace(traceCalls("(defun f (x) x) (f 1) (f 2)"));
+
+  assert.equal(text, "F(1) => 1\nF(2) => 2");
 });
