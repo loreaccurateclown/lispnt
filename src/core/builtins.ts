@@ -418,8 +418,13 @@ register("ERROR", 1, null, (args) => {
 
 // A type specifier is normally a quoted symbol, so the table is keyed by name.
 // Anything not in it — compound specifiers such as (integer 0 10) or (or …), and
-// struct type names — is Lispnt's gap, not the learner's mistake: it is reported
-// as unsupported-standard so analyze stays quiet rather than answering NIL.
+// a struct name no DEFSTRUCT has defined — is Lispnt's gap, not the learner's
+// mistake: it is reported as unsupported-standard so analyze stays quiet rather
+// than answering NIL.
+// Type names defined by DEFSTRUCT, so TYPEP can answer (typep x 'tree-node).
+// The interpreter adds to this when a structure is defined.
+export const structTypeNames = new Set<string>();
+
 const typePredicates = new Map<string, (value: LispValue) => boolean>([
   ["T", () => true],
   ["NIL", (value) => isNil(value)],
@@ -450,12 +455,21 @@ register("TYPEP", 2, 2, (args) => {
     );
 
   const predicate = typePredicates.get(specifier.name);
-  if (predicate === undefined)
-    throw new LispEvalError(
-      "unsupported-standard",
-      null,
-      `TYPEP: Lispnt does not know the type specifier ${specifier.name}`,
-    );
+  if (predicate !== undefined)
+    return predicate(args[0]!) ? intern("T") : NIL;
 
-  return predicate(args[0]!) ? intern("T") : NIL;
+  // A structure type is answered by comparing the instance's type name, so
+  // (typep 5 'tree-node) is NIL once tree-node has been defined.
+  if (structTypeNames.has(specifier.name)) {
+    const value = args[0]!;
+    return value.kind === "struct" && value.type === specifier.name
+      ? intern("T")
+      : NIL;
+  }
+
+  throw new LispEvalError(
+    "unsupported-standard",
+    null,
+    `TYPEP: Lispnt does not know the type specifier ${specifier.name}`,
+  );
 });

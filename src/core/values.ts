@@ -22,6 +22,14 @@ export interface Place {
 
 //mutable
 export type ArrayValue = { kind: "array"; elements: LispValue[] };
+// A structure instance: its type name, and its slots in definition order. A
+// defstruct accessor is setf-able in CL unless the slot is :read-only, so the
+// slot map is mutable.
+export type StructValue = {
+  kind: "struct";
+  type: string;
+  slots: Map<string, LispValue>;
+};
 export type LispValue =
   | SymbolValue
   | NumberValue
@@ -30,6 +38,7 @@ export type LispValue =
   | NilValue
   | ConsValue
   | ArrayValue
+  | StructValue
   | FunctionValue
   | BuiltInValue;
 
@@ -48,6 +57,9 @@ export type BuiltInValue = {
   min: number;
   max: number | null;
   fn: (args: LispValue[]) => LispValue;
+  // Set on a defstruct accessor: the type it reads and the slot it names, so
+  // resolvePlace can treat (accessor object) as an assignable place.
+  readonly accessor?: { readonly type: string; readonly slot: string };
 };
 
 export const NIL: NilValue = { kind: "nil" };

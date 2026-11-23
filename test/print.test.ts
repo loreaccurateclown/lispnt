@@ -250,3 +250,41 @@ test("prints a character inside a list and a vector", () => {
     "(#\\a #\\Space)",
   );
 });
+
+test("prints a structure the way SBCL does", () => {
+  const point: LispValue = {
+    kind: "struct",
+    type: "POINT",
+    slots: new Map<string, LispValue>([
+      ["X", num(1)],
+      ["Y", num(2)],
+    ]),
+  };
+
+  assert.equal(printValue(point), "#S(POINT :X 1 :Y 2)");
+});
+
+test("prints a nested structure", () => {
+  const inner: LispValue = {
+    kind: "struct",
+    type: "PNT",
+    slots: new Map([["X", num(1)]]),
+  };
+  const outer: LispValue = {
+    kind: "struct",
+    type: "BOX",
+    slots: new Map([["IN", inner]]),
+  };
+
+  assert.equal(printValue(outer), "#S(BOX :IN #S(PNT :X 1))");
+});
+
+test("cuts a structure at the depth limit", () => {
+  let wrapped: LispValue = { kind: "struct", type: "A", slots: new Map() };
+  for (let index = 0; index < 3; index += 1) {
+    wrapped = { kind: "struct", type: "A", slots: new Map([["NEXT", wrapped]]) };
+  }
+
+  assert.equal(printValue(wrapped, { maxDepth: 2 }), "#S(A :NEXT #S(A :NEXT #))");
+});
+

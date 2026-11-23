@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parse, type AstNode } from "../src/core/reader";
+import { parse, parseAll, type AstNode } from "../src/core/reader";
 import { NIL, cons, intern, isNil, type LispValue } from "../src/core/values";
 import { LispEvalError } from "../src/core/errors";
 import { printValue } from "../src/core/print";
@@ -23,7 +23,7 @@ function num(value: number): LispValue {
 }
 
 function printValueOf(source: string): string {
-  return printValue(evaluate(parse(source), createEnv(null)));
+  return printValue(evalIn(source));
 }
 
 function expectCons(value: LispValue) {
@@ -874,7 +874,10 @@ function char(value: string): LispValue {
 }
 
 function evalIn(source: string): LispValue {
-  return evaluate(parse(source), createEnv(null));
+  const env = createEnv(null);
+  let result: LispValue = NIL;
+  for (const form of parseAll(source)) result = evaluate(form, env);
+  return result;
 }
 
 test("evaluates a character literal", () => {
@@ -1063,3 +1066,159 @@ test("lists do and the case family as special forms", () => {
     assert.ok(SPECIAL_FORMS.has(name), `${name} should be a special form`);
   }
 });
+
+//LLM-written tests for defstruct
+
+test("defines a structure with defaults and a keyword constructor", () => {
+  assert.equal(
+    printValueOf("(defstruct point x (y 5)) (make-point :x 1)"),
+    "#S(POINT :X 1 :Y 5)",
+  );
+  assert.equal(printValueOf("(defstruct point x (y 5)) (make-point)"), "#S(POINT :X NIL :Y 5)");
+});
+
+test("returns the structure name from defstruct", () => {
+  assert.deepEqual(evalIn("(defstruct point x)"), intern("POINT"));
+});
+
+test("reads a slot through its accessor", () => {
+  assert.deepEqual(
+    evalIn("(defstruct point x y) (point-x (make-point :x 1 :y 2))"),
+    num(1),
+  );
+});
+
+test("applies :conc-name nil so accessors are the bare slot names", () => {
+  const source = [
+    "(defstruct (tree-node (:conc-name nil)) key (lc nil) (rc nil))",
+    "(key (make-tree-node :key 10))",
+  ].join(" ");
+  assert.deepEqual(evalIn(source), num(10));
+});
+
+test("keeps the conc-name prefix by default", () => {
+  assert.deepEqual(
+    evalIn('(defstruct book title) (book-title (make-book :title "Dune"))'),
+    { kind: "string", value: "Dune" },
+  );
+});
+
+test("assigns to a slot through the accessor place", () => {
+  const source = "(defstruct point x) (setf p (make-point :x 1)) (setf (point-x p) 9) (point-x p)";
+  assert.deepEqual(evalIn(source), num(9));
+});
+
+test("assigns to a slot under a conc-name", () => {
+  const source = "(defstruct node v) (setf n (make-node :v 1)) (setf (node-v n) 2) (node-v n)";
+  assert.deepEqual(evalIn(source), num(2));
+});
+
+test("rejects an accessor place on the wrong structure type", () => {
+  const source = "(defstruct a x) (defstruct b y) (setf (a-x (make-b :y 1)) 5)";
+  assert.throws(() => evalIn(source), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "type-error";
+  });
+});
+
+test("answers the predicate for its own type only", () => {
+  const source = "(defstruct a x) (defstruct b y) (list (a-p (make-a)) (b-p (make-a)))";
+  assert.equal(printValueOf(source), "(T NIL)");
+});
+
+test("copies a structure shallowly", () => {
+  const source = [
+    "(defstruct point x)",
+    "(setf p (make-point :x 1))",
+    "(setf q (copy-point p))",
+    "(setf (point-x q) 2)",
+    "(list (eq p q) (point-x p) (point-x q))",
+  ].join(" ");
+  assert.equal(printValueOf(source), "(NIL 1 2)");
+});
+
+test("compares structures by identity", () => {
+  assert.deepEqual(
+    evalIn("(defstruct point x) (equal (make-point :x 1) (make-point :x 1))"),
+    NIL,
+  );
+});
+
+test("answers typep for a defined structure type", () => {
+  const source = "(defstruct point x) (typep (make-point) 'point)";
+  assert.deepEqual(evalIn(source), intern("T"));
+  const other = "(defstruct point x) (defstruct other y) (typep (make-other) 'point)";
+  assert.deepEqual(evalIn(other), NIL);
+  const no = "(defstruct point x) (typep 5 'point)";
+  assert.deepEqual(evalIn(no), NIL);
+});
+
+test("still refuses a type name nothing defines", () => {
+  assert.throws(() => evalIn("(typep 5 'nothing-defined)"), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "unsupported-standard";
+  });
+});
+
+test("rejects a keyword that names no slot", () => {
+  assert.throws(
+    () => evalIn("(defstruct point x) (make-point :z 1)"),
+    (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "malformed-form";
+    },
+  );
+});
+
+test("rejects an odd number of constructor arguments", () => {
+  assert.throws(
+    () => evalIn("(defstruct point x) (make-point :x)"),
+    (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "malformed-form";
+    },
+  );
+});
+
+test("refuses defstruct options it does not model", () => {
+  const cases = [
+    "(defstruct (a (:include b)) x)",
+    "(defstruct a (x 1 :type integer))",
+  ];
+  for (const source of cases) {
+    assert.throws(() => evalIn(source), (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "unsupported-standard";
+    }, source);
+  }
+});
+
+test("prints a structure with no slots", () => {
+  assert.equal(printValueOf("(defstruct empty) (make-empty)"), "#S(EMPTY)");
+});
+
+test("prints a structure nested in a list", () => {
+  const source = "(defstruct point x) (list (make-point :x 1))";
+  assert.equal(printValueOf(source), "(#S(POINT :X 1))");
+});
+
+test("prints a structure that points at itself without looping", () => {
+  const source = [
+    "(defstruct node next)",
+    "(setf n (make-node))",
+    "(setf (node-next n) n)",
+    "n",
+  ].join(" ");
+  assert.equal(printValueOf(source), "#S(NODE :NEXT ...)");
+});
+
+test("traces a recursive function over structures", () => {
+  const source = [
+    "(defstruct (tree-node (:conc-name nil)) key (lc nil) (rc nil))",
+    "(defun height (n) (if (null n) 0 (+ 1 (max (height (lc n)) (height (rc n))))))",
+    "(height (make-tree-node :key 1 :lc (make-tree-node :key 2)))",
+  ].join(" ");
+  assert.deepEqual(evalIn(source), num(2));
+});
+
+test("lists defstruct as a special form", () => {
+  assert.ok(SPECIAL_FORMS.has("DEFSTRUCT"));
+});
+
+
+

@@ -9,6 +9,8 @@ import {
   FunctionValue,
   Place,
   ConsValue,
+  BuiltInValue,
+  StructValue,
 } from "./values";
 import type { AstNode, AtomNode, ListNode, Position } from "./reader";
 import {
@@ -18,6 +20,7 @@ import {
   expectNumber,
   isEq,
   register,
+  structTypeNames,
 } from "./builtins";
 import { LispEvalError } from "./errors";
 import { printValue } from "./print";
@@ -125,6 +128,7 @@ export const SPECIAL_FORMS: ReadonlySet<string> = new Set([
   "CCASE",
   "DEFPARAMETER",
   "DEFVAR",
+  "DEFSTRUCT",
   "FUNCTION",
   "QUOTE",
 ]);
@@ -261,6 +265,8 @@ function evaluateInner(node: AstNode, env: Env): LispValue {
       case "DEFPARAMETER":
       case "DEFVAR":
         return evalDefParameter(node, env);
+      case "DEFSTRUCT":
+        return evalDefstruct(node, env);
       case "SETQ":
         return evalSetQ(node, env);
       case "DOLIST":
@@ -380,12 +386,15 @@ export function resolvePlace(node: AstNode, env: Env): Place {
         },
       };
     }
-    default:
+    default: {
+      const accessorPlace = resolveAccessorPlace(node, env);
+      if (accessorPlace !== undefined) return accessorPlace;
       throw new LispEvalError(
         "not-a-place",
         node.start,
         `not a place: ${String(name)}`,
       );
+    }
   }
 }
 
@@ -1054,6 +1063,242 @@ function assign(env: Env, name: string, value: LispValue): boolean {
     current = current.parent;
   }
   return false;
+}
+
+// DEFSTRUCT — the type, its slots, and the four names CL generates from it: the
+// keyword constructor MAKE-NAME, the predicate NAME-P, the copier COPY-NAME and
+// one accessor per slot. Only the :conc-name option is modelled; :include and
+// friends are Lispnt's gap and say so rather than being ignored.
+function evalDefstruct(form: ListNode, env: Env): LispValue {
+  const header = form.children[1];
+  if (header === undefined)
+    throw new LispEvalError("malformed-form", form.start, "defstruct needs a name");
+
+  const headerName = header.kind === "list" ? header.children[0] : header;
+  const typeName = headerName === undefined ? undefined : symbolName(headerName);
+  if (typeName === undefined)
+    throw new LispEvalError(
+      "malformed-form",
+      form.start,
+      "defstruct needs a name",
+    );
+
+  let concName = `${typeName}-`;
+  if (header.kind === "list") {
+    for (const option of header.children.slice(1)) {
+      if (option.kind !== "list" || option.children[0] === undefined)
+        throw new LispEvalError(
+          "malformed-form",
+          option.start,
+          "defstruct options are written as (name value)",
+        );
+
+      const key = String(symbolName(option.children[0]) ?? "").toUpperCase();
+      if (key !== ":CONC-NAME")
+        throw new LispEvalError(
+          "unsupported-standard",
+          option.start,
+          `defstruct option ${key} is not implemented`,
+        );
+
+      const valueNode = option.children[1];
+      if (valueNode === undefined)
+        throw new LispEvalError(
+          "malformed-form",
+          option.start,
+          "defstruct :conc-name needs a value",
+        );
+
+      if (valueNode.kind !== "atom")
+        throw new LispEvalError(
+          "unsupported-standard",
+          valueNode.start,
+          "defstruct :conc-name takes a symbol, a string or nil",
+        );
+
+      const prefix = String(valueNode.value);
+      concName = prefix.toUpperCase() === "NIL" ? "" : prefix.toUpperCase();
+    }
+  }
+
+  const slots: Array<{ name: string; defaultNode?: AstNode }> = [];
+  for (const slotNode of form.children.slice(2)) {
+    if (slotNode.kind === "atom") {
+      const name = symbolName(slotNode);
+      if (name === undefined)
+        throw new LispEvalError(
+          "malformed-form",
+          slotNode.start,
+          "defstruct slots need a name",
+        );
+      slots.push({ name });
+      continue;
+    }
+
+    if (slotNode.kind !== "list" || slotNode.children[0] === undefined)
+      throw new LispEvalError(
+        "malformed-form",
+        slotNode.start,
+        "defstruct slots are written as name or (name default)",
+      );
+
+    const name = symbolName(slotNode.children[0]);
+    if (name === undefined)
+      throw new LispEvalError(
+        "malformed-form",
+        slotNode.start,
+        "defstruct slots need a name",
+      );
+
+    if (slotNode.children.length > 2)
+      throw new LispEvalError(
+        "unsupported-standard",
+        slotNode.children[2]!.start,
+        "defstruct slot options (such as :type or :read-only) are not implemented",
+      );
+
+    const defaultNode = slotNode.children[1];
+    if (defaultNode === undefined) slots.push({ name });
+    else slots.push({ name, defaultNode });
+  }
+
+  const constructorName = `MAKE-${typeName}`;
+  const predicateName = `${typeName}-P`;
+  const copierName = `COPY-${typeName}`;
+
+  const construct: BuiltInValue["fn"] = (args) => {
+    const values = new Map<string, LispValue>();
+    for (const slot of slots) {
+      values.set(
+        slot.name,
+        slot.defaultNode === undefined ? NIL : evaluate(slot.defaultNode, env),
+      );
+    }
+
+    if (args.length % 2 !== 0)
+      throw new LispEvalError(
+        "malformed-form",
+        null,
+        `${constructorName}: arguments come in :slot value pairs`,
+      );
+
+    for (let index = 0; index < args.length; index += 2) {
+      const keyword = args[index]!;
+      const slotName =
+        keyword.kind === "symbol" && keyword.name.startsWith(":")
+          ? keyword.name.slice(1)
+          : undefined;
+      if (slotName === undefined)
+        throw new LispEvalError(
+          "type-error",
+          null,
+          `${constructorName}: expected a :slot keyword, got ${keyword.kind}`,
+        );
+      if (!values.has(slotName))
+        throw new LispEvalError(
+          "malformed-form",
+          null,
+          `${typeName} has no slot named :${slotName}`,
+        );
+      values.set(slotName, args[index + 1]!);
+    }
+
+    return { kind: "struct", type: typeName, slots: values };
+  };
+
+  define(env, constructorName, {
+    kind: "builtin",
+    name: constructorName,
+    min: 0,
+    max: null,
+    fn: construct,
+  });
+
+  define(env, predicateName, {
+    kind: "builtin",
+    name: predicateName,
+    min: 1,
+    max: 1,
+    fn: (args) =>
+      args[0]!.kind === "struct" && args[0]!.type === typeName
+        ? intern("T")
+        : NIL,
+  });
+
+  define(env, copierName, {
+    kind: "builtin",
+    name: copierName,
+    min: 1,
+    max: 1,
+    fn: (args) => {
+      const source = expectStruct(args[0]!, typeName, copierName);
+      return { kind: "struct", type: typeName, slots: new Map(source.slots) };
+    },
+  });
+
+  for (const slot of slots) {
+    const accessorName = `${concName}${slot.name}`;
+    define(env, accessorName, {
+      kind: "builtin",
+      name: accessorName,
+      min: 1,
+      max: 1,
+      accessor: { type: typeName, slot: slot.name },
+      fn: (args) => {
+        const target = expectStruct(args[0]!, typeName, accessorName);
+        return target.slots.get(slot.name) ?? NIL;
+      },
+    });
+  }
+
+  structTypeNames.add(typeName);
+  return intern(typeName);
+}
+
+export function expectStruct(
+  value: LispValue,
+  type: string,
+  name: string,
+): StructValue {
+  if (value.kind !== "struct" || value.type !== type)
+    throw new LispEvalError(
+      "type-error",
+      null,
+      `${name}: expected a ${type}, got ${value.kind === "struct" ? value.type : value.kind}`,
+    );
+  return value;
+}
+
+// A defstruct accessor used as a place: (setf (lc node) 5). The struct is
+// evaluated once, as a place's subforms are in CL.
+function resolveAccessorPlace(
+  node: ListNode,
+  env: Env,
+): Place | undefined {
+  const head = node.children[0];
+  const name = head === undefined ? undefined : symbolName(head);
+  if (name === undefined) return undefined;
+
+  const callable = lookup(env, name);
+  if (callable === undefined || callable.kind !== "builtin") return undefined;
+  const accessor = callable.accessor;
+  if (accessor === undefined) return undefined;
+
+  const objectNode = node.children[1];
+  if (objectNode === undefined)
+    throw new LispEvalError(
+      "malformed-form",
+      null,
+      `${callable.name} needs an object to read`,
+    );
+
+  const target = expectStruct(evaluate(objectNode, env), accessor.type, callable.name);
+  return {
+    get: () => target.slots.get(accessor.slot) ?? NIL,
+    set: (value) => {
+      target.slots.set(accessor.slot, value);
+    },
+  };
 }
 
 function evalSetQ(form: ListNode, env: Env): LispValue {

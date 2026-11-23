@@ -1,4 +1,4 @@
-import type { ArrayValue, ConsValue, LispValue } from "./values";
+import type { ArrayValue, ConsValue, LispValue, StructValue } from "./values";
 
 export interface PrintOptions {
   maxElements?: number;
@@ -11,7 +11,7 @@ const DEFAULT_MAX_DEPTH = 3;
 interface PrintState {
   maxElements: number;
   maxDepth: number;
-  ancestors: Set<ConsValue | ArrayValue>;
+  ancestors: Set<ConsValue | ArrayValue | StructValue>;
 }
 
 export function printValue(value: LispValue, options?: PrintOptions): string {
@@ -42,10 +42,11 @@ function render(value: LispValue, depth: number, state: PrintState): string {
       return `#<function ${value.name}>`;
     case "cons":
     case "array":
+    case "struct":
       if (depth >= state.maxDepth) return "#";
-      return value.kind === "cons"
-        ? renderCons(value, depth, state)
-        : renderArray(value, depth, state);
+      if (value.kind === "cons") return renderCons(value, depth, state);
+      if (value.kind === "array") return renderArray(value, depth, state);
+      return renderStruct(value, depth, state);
   }
 }
 
@@ -122,4 +123,24 @@ function renderArray(
 
   state.ancestors.delete(array);
   return "#(" + parts.join(" ") + ")";
+}
+
+// #S(TREE-NODE :KEY 5 :LC NIL :RC NIL) — slots in definition order, which is
+// why StructValue keeps them in a Map.
+function renderStruct(
+  value: StructValue,
+  depth: number,
+  state: PrintState,
+): string {
+  if (state.ancestors.has(value)) return "...";
+
+  state.ancestors.add(value);
+  const parts: string[] = [];
+  for (const [slot, slotValue] of value.slots) {
+    parts.push(`:${slot} ${render(slotValue, depth + 1, state)}`);
+  }
+  state.ancestors.delete(value);
+
+  const rendered = parts.length === 0 ? "" : ` ${parts.join(" ")}`;
+  return `#S(${value.type}${rendered})`;
 }
