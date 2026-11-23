@@ -18,6 +18,11 @@ export interface BindingSnapshot {
 
 export type BindingsUnavailable = "budget" | "unparsed" | "truncated";
 
+export interface BindingsRun {
+  readonly snapshots: BindingSnapshot[];
+  readonly unavailable?: BindingsUnavailable;
+}
+
 export interface BindingsResult {
   readonly snapshot: BindingSnapshot | null;
   readonly unavailable?: BindingsUnavailable;
@@ -26,12 +31,12 @@ export interface BindingsResult {
 const BINDINGS_STEP_CEILING = 200_000;
 const SNAPSHOT_LIMIT = 20_000;
 
-export function bindingsAt(source: string, offset: number): BindingsResult {
+export function recordBindings(source: string): BindingsRun {
   let forms: AstNode[];
   try {
     forms = parseAll(source);
   } catch {
-    return { snapshot: null, unavailable: "unparsed" };
+    return { snapshots: [], unavailable: "unparsed" };
   }
 
   const snapshots: BindingSnapshot[] = [];
@@ -85,34 +90,18 @@ export function bindingsAt(source: string, offset: number): BindingsResult {
     }),
   );
 
-  const completed = unavailable === undefined && !truncated;
-  const snapshot = resolve(snapshots, offset, completed);
-
-  if (unavailable !== undefined) return { snapshot, unavailable };
-  if (truncated) return { snapshot, unavailable: "truncated" };
-  return { snapshot };
+  if (unavailable !== undefined) return { snapshots, unavailable };
+  if (truncated) return { snapshots, unavailable: "truncated" };
+  return { snapshots };
 }
 
-function visibleCopy(env: Env): Map<string, LispValue> {
-  const copy = new Map<string, LispValue>();
-
-  for (const [name, value] of visibleBindings(env)) {
-    if (value.kind === "builtin") continue;
-    if (name === "T" || name === "NIL") continue;
-    copy.set(name, value);
-  }
-
-  return copy;
-}
-
-function resolve(
-  snapshots: BindingSnapshot[],
+export function snapshotAt(
+  run: BindingsRun,
   offset: number,
-  completed: boolean,
 ): BindingSnapshot | null {
   let innermost: BindingSnapshot | null = null;
 
-  for (const snapshot of snapshots) {
+  for (const snapshot of run.snapshots) {
     if (offset < snapshot.start || offset >= snapshot.end) continue;
     if (
       innermost === null ||
@@ -125,14 +114,34 @@ function resolve(
   // The fallback infers state from the last form to finish, so it is only
   // sound when every form ran: truncated or stopped early, later forms may
   // have changed bindings without a snapshot to show for it.
-  if (!completed) return null;
+  if (run.unavailable !== undefined) return null;
 
   let latest: BindingSnapshot | null = null;
 
-  for (const snapshot of snapshots) {
+  for (const snapshot of run.snapshots) {
     if (snapshot.end > offset) continue;
     if (latest === null || snapshot.end >= latest.end) latest = snapshot;
   }
 
   return latest;
+}
+
+export function bindingsAt(source: string, offset: number): BindingsResult {
+  const run = recordBindings(source);
+  const snapshot = snapshotAt(run, offset);
+
+  if (run.unavailable === undefined) return { snapshot };
+  return { snapshot, unavailable: run.unavailable };
+}
+
+function visibleCopy(env: Env): Map<string, LispValue> {
+  const copy = new Map<string, LispValue>();
+
+  for (const [name, value] of visibleBindings(env)) {
+    if (value.kind === "builtin") continue;
+    if (name === "T" || name === "NIL") continue;
+    copy.set(name, value);
+  }
+
+  return copy;
 }

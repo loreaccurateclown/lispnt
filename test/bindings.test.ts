@@ -2,8 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   bindingsAt,
+  recordBindings,
+  snapshotAt,
   type BindingSnapshot,
   type BindingsResult,
+  type BindingsRun,
 } from "../src/core/bindings";
 import type { LispValue } from "../src/core/values";
 
@@ -21,6 +24,14 @@ function at(source: string, marker: string): number {
 function expectSnapshot(result: BindingsResult): BindingSnapshot {
   assert.ok(result.snapshot !== null, "expected a snapshot");
   return result.snapshot;
+}
+
+function snap(
+  start: number,
+  end: number,
+  bindings: Map<string, LispValue> = new Map(),
+): BindingSnapshot {
+  return { start, end, bindings };
 }
 
 test("holds the value a defparameter gave a top-level name", () => {
@@ -162,4 +173,45 @@ test("records nothing for a form that failed", () => {
 
   assert.equal(result.snapshot, null);
   assert.equal(result.unavailable, undefined);
+});
+
+test("records one snapshot per evaluated list form", () => {
+  const run = recordBindings("(defparameter x 5)");
+
+  assert.equal(run.unavailable, undefined);
+  assert.equal(run.snapshots.length, 1);
+});
+
+test("finds the snapshot whose range contains the offset", () => {
+  const first = snap(0, 10);
+  const second = snap(20, 30);
+  const run: BindingsRun = { snapshots: [first, second] };
+
+  assert.equal(snapshotAt(run, 5), first);
+});
+
+test("prefers the later of two identical ranges", () => {
+  const early = snap(0, 10);
+  const late = snap(0, 10);
+  const run: BindingsRun = { snapshots: [early, late] };
+
+  assert.equal(snapshotAt(run, 5), late);
+});
+
+test("falls back to the last finished snapshot on a complete run", () => {
+  const only = snap(0, 10);
+  const run: BindingsRun = { snapshots: [only] };
+
+  assert.equal(snapshotAt(run, 15), only);
+});
+
+test("refuses the fallback when the run stopped early", () => {
+  const only = snap(0, 10);
+  const run: BindingsRun = { snapshots: [only], unavailable: "budget" };
+
+  assert.equal(snapshotAt(run, 15), null);
+});
+
+test("returns null for a run with no snapshots", () => {
+  assert.equal(snapshotAt({ snapshots: [] }, 0), null);
 });
