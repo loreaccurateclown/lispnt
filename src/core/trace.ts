@@ -8,7 +8,7 @@ import {
 } from "./interpreter";
 import { printValue } from "./print";
 import { parseAll, type AstNode } from "./reader";
-import type { FunctionValue, LispValue } from "./values";
+import type { Env, FunctionValue, LispValue } from "./values";
 
 export interface TraceFrame {
   readonly name: string;
@@ -25,7 +25,7 @@ export interface TraceResult {
   readonly failed?: string;
 }
 
-const TRACE_STEP_CEILING = 200_000;
+export const TRACE_STEP_CEILING = 200_000;
 const TRACE_DEPTH_LIMIT = 64;
 const TRACE_FRAME_LIMIT = 1_000;
 
@@ -37,6 +37,22 @@ export function traceCalls(source: string): TraceResult {
     return { frames: [], truncated: false, unavailable: "unparsed" };
   }
 
+  const env = createEnv(null);
+
+  return record(() => {
+    for (const form of forms) evaluate(form, env);
+  });
+}
+
+// Traces a single already-parsed expression in a prepared environment, so a
+// caller can load a file first and then trace one call in it.
+export function traceFormIn(form: AstNode, env: Env): TraceResult {
+  return record(() => {
+    evaluate(form, env);
+  });
+}
+
+function record(run: () => void): TraceResult {
   const roots: TraceFrame[] = [];
   // null marks a call that was too deep or past the frame cap to record.
   const stack: Array<TraceFrame | null> = [];
@@ -84,14 +100,8 @@ export function traceCalls(source: string): TraceResult {
     },
   };
 
-  const env = createEnv(null);
-
   try {
-    withStepCeiling(TRACE_STEP_CEILING, () =>
-      withObserver(observer, () => {
-        for (const form of forms) evaluate(form, env);
-      }),
-    );
+    withStepCeiling(TRACE_STEP_CEILING, () => withObserver(observer, run));
   } catch (error) {
     if (error instanceof ReturnSignal) {
       // A stray return ends evaluation; the frames recorded so far stand.
