@@ -15,9 +15,10 @@ export function formatTraceReport(path: string, source: string): string {
 
   if (cases.length === 0) {
     lines.push(
-      "No ;;[trace] call in this file.",
+      "No ;;[trace] calls in this file.",
       "",
-      "Write a line comment with the call you want followed, then run the command again:",
+      "Write ;;[trace] (function-name test-value) above a function definition, then",
+      "run the command again:",
       "",
       "    ;;[trace] (fact 4)",
       "",

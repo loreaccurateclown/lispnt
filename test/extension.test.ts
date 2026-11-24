@@ -430,7 +430,7 @@ const FACT = "(defun fact (n) (if (= n 0) 1 (* n (fact (1- n)))))";
 test("the trace report explains the marker when a file has none", () => {
   const report = formatTraceReport("a.lisp", FACT);
 
-  assert.match(report, /No ;;\[trace\] call in this file/);
+  assert.match(report, /No ;;\[trace\] calls in this file/);
   assert.match(report, /;;\[trace\] \(fact 4\)/);
 });
 
@@ -516,7 +516,7 @@ test("creates the activity-bar tree and starts on the active document", () => {
   assert.ok((tree?.refreshes ?? 0) >= 1);
 
   const roots = tree?.provider.getChildren() as readonly TraceNode[];
-  assert.equal(roots.length, 1);
+  assert.equal(roots.length, 2);
   assert.equal(roots[0]?.label, "(fact 3)");
 
   const rootItem = tree?.provider.getTreeItem(roots[0]!);
@@ -571,7 +571,7 @@ test("the tree follows the active editor, so opening a file fills it", () => {
   fake.activeEditorChanged();
 
   const roots = fake.trees[0]?.provider.getChildren() as readonly TraceNode[];
-  assert.equal(roots.length, 1);
+  assert.equal(roots.length, 2);
   assert.equal(roots[0]?.label, "(fact 3)");
 });
 
@@ -620,7 +620,7 @@ test("focusing the generated trace document leaves the tree on its file", () => 
   fake.activeEditorChanged();
 
   const roots = fake.trees[0]?.provider.getChildren() as readonly TraceNode[];
-  assert.equal(roots.length, 1);
+  assert.equal(roots.length, 2);
   assert.equal(roots[0]?.label, "(fact 3)");
 });
 
@@ -674,13 +674,20 @@ test("the trace command falls back to the traced file when focus is elsewhere", 
   assert.match(provide("lispnt-trace:/Trace"), /root: 0: FACT\(3\) => 6/);
 });
 
-test("the tree carries the trace explanation under its summary", () => {
+test("the summary stays in the message and the explanation ends the tree", () => {
   const active = documentOf("a.lisp", `${FACT}\n;;[trace] (fact 3)`);
   const fake = fakeApi({ active });
   activate(fake);
 
   const message = fake.trees[0]?.message ?? "";
   assert.match(message, /final value: 6/);
-  assert.match(message, /This is a summary, not a full trace\./);
-  assert.match(message, /tail-call recursion/);
+  assert.doesNotMatch(message, /This is a summary/);
+
+  const roots = fake.trees[0]?.provider.getChildren() as readonly TraceNode[];
+  const help = roots.at(-1);
+  assert.equal(help?.label, "What am I looking at?");
+  assert.equal(help?.state, "collapsed");
+  assert.equal(help?.children.length, 4);
+  assert.match(help?.children[0]?.label ?? "", /This is a summary, not a full trace\./);
+  assert.match(help?.children[3]?.label ?? "", /tail-call recursion/);
 });
