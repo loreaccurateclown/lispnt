@@ -12,6 +12,7 @@ bench/**
 userdocs/**
 examples/**
 lisp_test_files/**
+.github/**
 src/**
 test/**
 dist/test/**
