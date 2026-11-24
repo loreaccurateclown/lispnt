@@ -326,7 +326,7 @@ function unclosedBindingMismatch(
   );
   if (candidate === undefined) return undefined;
 
-  const closes = `The ${head} also never closes: the file ends ${openForms.length} \`)\` short.`;
+  const closes = `The ${head} also never closes: the file is ${openForms.length} closing parenthesis short.`;
   return {
     code: "bracket-mismatch",
     severity: "error",

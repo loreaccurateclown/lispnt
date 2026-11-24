@@ -44,7 +44,7 @@ test("counts the closers a nested unclosed form still needs", () => {
   assert.equal(diagnostic?.code, "unterminated-list");
   assert.equal(
     diagnostic?.message,
-    "3 lists are still open, so the file ends 3 `)` short. Add `)))` after the last line; the outermost opened on line 1.",
+    "3 lists are still open, so the file is 3 closing parentheses short. Add ))) after the last line; the outermost opened on line 1.",
   );
   // The squiggle covers `(+` at the head, not the opening paren alone.
   assert.deepEqual(diagnostic?.end, { line: 3, column: 7, offset: 39 });
@@ -55,7 +55,7 @@ test("names the last complete form as where checking stopped", () => {
 
   assert.equal(
     diagnostic?.message,
-    "This form never closes, so the file ends 1 `)` short. Add `)` after the last line. The last complete form ends on line 1.",
+    "This form never closes, so the file is 1 closing parenthesis short. Add it after the last line. The last complete form ends on line 1.",
   );
 });
 
@@ -172,7 +172,7 @@ test("keeps the unclosed form as the mark when the recovered read is clean", () 
   assert.equal(diagnostic?.code, "unterminated-list");
   assert.equal(
     diagnostic?.message,
-    "This form never closes, so the file ends 1 `)` short. Add `)` after the last line.",
+    "This form never closes, so the file is 1 closing parenthesis short. Add it after the last line.",
   );
   assert.deepEqual(spanOf(diagnostic), [5, 1, 5, 7]);
 });
@@ -188,7 +188,7 @@ test("reports the double brackets and the missing closer together", () => {
   assert.equal(diagnostic?.code, "bracket-mismatch");
   assert.equal(
     diagnostic?.message,
-    "LET bindings need a pair of brackets each: write `((x 0))` so `X` is bound to `0`. As written, LET reads `X`, then takes `0` as a second binding, which fails. The LET also never closes: the file ends 1 `)` short.",
+    "LET bindings need a pair of brackets each: write ((x 0)) so X is bound to 0. As written, LET reads X, then takes 0 as a second binding, which fails. The LET also never closes: the file is 1 closing parenthesis short.",
   );
   assert.deepEqual(spanOf(diagnostic), [7, 1, 7, 5]);
 });
@@ -305,7 +305,7 @@ test("says how to repair a binding list written without its inner brackets", () 
   assert.equal(diagnostic?.code, "let-binding");
   assert.equal(
     diagnostic?.message,
-    "LET bindings need a pair of brackets each: write `((x 0))` so `X` is bound to `0`. As written, LET reads `X`, then takes `0` as a second binding, which fails.",
+    "LET bindings need a pair of brackets each: write ((x 0)) so X is bound to 0. As written, LET reads X, then takes 0 as a second binding, which fails.",
   );
   assert.deepEqual(diagnostic?.position, { line: 1, column: 1, offset: 0 });
   assert.deepEqual(diagnostic?.end, { line: 1, column: 12, offset: 11 });
@@ -326,7 +326,7 @@ test("reports a binding entry that is neither a name nor a pair", () => {
 
   assert.equal(
     diagnostic?.message,
-    "Each LET binding is a name or a `(name value)` pair, as in `((x 0))`. As written, `0` is not a binding.",
+    "Each LET binding is a name or a (name value) pair, as in ((x 0)). As written, 0 is not a binding.",
   );
 });
 
@@ -342,7 +342,7 @@ test("shows where a defun's name belongs", () => {
 
   assert.equal(
     diagnostic?.message,
-    "A DEFUN needs its name before the argument list: write `(defun name (x) …)`.",
+    "A DEFUN needs its name before the argument list: write (defun name (x) …).",
   );
   assert.deepEqual(diagnostic?.end, { line: 1, column: 16, offset: 15 });
 });
@@ -352,7 +352,7 @@ test("puts the learner's own name in the defun argument-list repair", () => {
 
   assert.equal(
     diagnostic?.message,
-    "A DEFUN needs an argument list after the name: write `(defun f (x) …)`.",
+    "A DEFUN needs an argument list after the name: write (defun f (x) …).",
   );
 });
 
@@ -361,7 +361,7 @@ test("shows where a lambda's argument list belongs", () => {
 
   assert.equal(
     diagnostic?.message,
-    "A LAMBDA needs its argument list first: write `(lambda (x) …)`.",
+    "A LAMBDA needs its argument list first: write (lambda (x) …).",
   );
 });
 
@@ -370,7 +370,7 @@ test("shows the shape a labels definition list needs", () => {
 
   assert.equal(
     diagnostic?.message,
-    "FLET and LABELS need a list of local definitions: write `(labels ((name (x) …)) …)`.",
+    "FLET and LABELS need a list of local definitions: write (labels ((name (x) …)) …).",
   );
 });
 
@@ -380,7 +380,7 @@ test("marks the local definition that has no argument list", () => {
   assert.equal(diagnostic?.code, "local-definition");
   assert.equal(
     diagnostic?.message,
-    "Each local function is a name and an argument list: write `((name (x) …))`.",
+    "Each local function is a name and an argument list: write ((name (x) …)).",
   );
   assert.deepEqual(diagnostic?.position, { line: 1, column: 10, offset: 9 });
   assert.deepEqual(diagnostic?.end, { line: 1, column: 13, offset: 12 });
@@ -395,7 +395,7 @@ test("says what IF needs", () => {
   assert.equal(diagnostic?.code, "operand-count");
   assert.equal(
     diagnostic?.message,
-    "IF takes a test, a then-branch and an optional else-branch: write `(if test then else)`.",
+    "IF takes a test, a then-branch and an optional else-branch: write (if test then else).",
   );
   assert.deepEqual(diagnostic?.end, { line: 1, column: 7, offset: 6 });
 });
@@ -533,7 +533,7 @@ test("reports a defun whose name is not a symbol", () => {
     code: "defun-name",
     severity: "error",
     message:
-      "A DEFUN needs its name before the argument list: write `(defun name (x) …)`.",
+      "A DEFUN needs its name before the argument list: write (defun name (x) …).",
     position: { line: 1, column: 1, offset: 0 },
     end: { line: 1, column: 16, offset: 15 },
   });

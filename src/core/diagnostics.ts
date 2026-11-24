@@ -140,11 +140,10 @@ function unterminatedListMessage(
   const outermost = openForms[openForms.length - 1];
   const closers = ")".repeat(count);
 
-  const tick = "`";
   const short =
     count === 1
-      ? "This form never closes, so the file ends 1 `)` short. Add `)` after the last line."
-      : `${count} lists are still open, so the file ends ${count} ${tick})${tick} short. Add ${tick}${closers}${tick} after the last line; the outermost opened on line ${outermost?.position.line ?? error.position.line}.`;
+      ? "This form never closes, so the file is 1 closing parenthesis short. Add it after the last line."
+      : `${count} lists are still open, so the file is ${count} closing parentheses short. Add ${closers} after the last line; the outermost opened on line ${outermost?.position.line ?? error.position.line}.`;
 
   return lastCompleteLine === undefined
     ? short
@@ -161,11 +160,11 @@ function userMessageSwitcher(errorMessage: ReaderErrorCode): string {
     case "empty-input":
       return "Nothing to parse.";
     case "unterminated-list":
-      return "This list is never closed. Add a `)`.";
+      return "This list is never closed. Add a closing parenthesis.";
     case "unterminated-string":
-      return 'This string is never closed. Add a closing `"`.';
+      return "This string is never closed. Add a closing double quote.";
     case "unterminated-block-comment":
-      return "This block comment is never closed. Add a closing `|#`.";
+      return "This block comment is never closed. Add |# to close it.";
     case "unexpected-eof":
       return "Unexpected end of file.";
     case "trailing-content":

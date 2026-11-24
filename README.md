@@ -27,9 +27,9 @@ What it finds today:
 
 - **Broken brackets.** A stray `)` is marked where it sits. A list that never
   closes says how much is missing and where the first closer belongs — "3 lists
-  are still open, so the file ends 3 `)` short. Add `)))` after the last line;
-  the outermost opened on line 1" — and it underlines `(+` rather than a single
-  character. When one closer was deleted and it made a form swallow the form
+  are still open, so the file is 3 closing parentheses short. Add ))) after the
+  last line; the outermost opened on line 1" — and it underlines (+ rather than a
+  single character. When one closer was deleted and it made a form swallow the form
   below it, the mark moves to that form and says which line is off: "Bracket
   mismatch at line 9: COUNT-ZEROS was given 3 arguments; it takes 1 to 2. Check
   the COUNT-ZEROS form for a missing closing bracket." That covers a call's

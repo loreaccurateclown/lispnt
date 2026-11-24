@@ -288,8 +288,12 @@ function endOffset(node: AstNode, parent: ListNode): number {
   return Math.max(node.start.offset + 1, parent.end.offset - 1);
 }
 
+// Diagnostic messages are plain text: the editor renders a diagnostic hover as
+// text, not markdown (microsoft/vscode#54272 is the open request for formatting),
+// so a code snippet gets no backticks here. The helper stays so the call sites
+// still read as "this part is the example".
 function quote(text: string): string {
-  return "`" + text + "`";
+  return text;
 }
 
 function checkLocalFunctions(list: ListNode, diagnostics: Diagnostic[]): void {
@@ -306,7 +310,7 @@ function checkLocalFunctions(list: ListNode, diagnostics: Diagnostic[]): void {
     return;
   }
 
-  const local = "Each local function is a name and an argument list: write `((name (x) …))`.";
+  const local = "Each local function is a name and an argument list: write ((name (x) …)).";
 
   for (const definitionNode of definitionsNode.children) {
     if (!isListNode(definitionNode)) {
