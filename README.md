@@ -1,5 +1,7 @@
 # Lispnt
 
+[![CI](https://github.com/loreaccurateclown/lispnt/actions/workflows/ci.yml/badge.svg)](https://github.com/loreaccurateclown/lispnt/actions/workflows/ci.yml)
+
 A read-only diagnostic path for Common Lisp, aimed at learners on SBCL, as a VS
 Code extension that sits alongside OLIVE/SBCL.
 
@@ -84,8 +86,8 @@ npm run build
 npx @vscode/vsce package --no-dependencies
 ```
 
-`vsce` also needs a `repository` field in `package.json`, because the README
-links to `LICENSE`; packaging waits until the repository URL exists.
+`package.json` carries the repository URL, so `vsce` resolves the README's
+relative links against it; the publisher is `SK-Clownsoft`.
 
 ## Development
 

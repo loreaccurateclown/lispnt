@@ -23,9 +23,11 @@ here exists to shorten that loop.
   checks, M5 recursion trace, M6 extension glue — complete.** M6 is through
   slice 6.5a (tree view, pin, value hints, tooltips).
 - **Benchmarks — shipped** (`npm run bench`, `bench/run.mjs`).
-- **Packaging a `.vsix` — not shipped.** The only thing outstanding besides it is
-  a publisher id. `README.md` has the build steps; `package.json` and
-  `.vscodeignore` carry the rest.
+- **Repo and packaging.** Public at
+  https://github.com/loreaccurateclown/lispnt, branch `main`; publisher id
+  `SK-Clownsoft`; CI runs `npm test` on every push. `vsce package` produces a
+  `.vsix`; no Marketplace release is published yet (that needs a Trusted
+  Publishing policy and the OIDC workflow).
 - **M7 formatter — not started,** optional.
 - The user has run the extension in a real editor and reported diagnostics,
   squiggles, messages, the trace view and the value hints working there.
@@ -43,7 +45,8 @@ markers run.
 
 ## Repo and toolchain
 
-- TypeScript 7.0.2 pinned; Node 22.21.0. Branch `master`. `npm install` first if
+- TypeScript 7.0.2 pinned; Node 22.21.0. Branch `main`; remote `origin` is
+  https://github.com/loreaccurateclown/lispnt. `npm install` first if
   `node_modules/` is missing.
 - `npm run build`; `npm run check`; `npm test` (builds, then runs each suite file
   explicitly — `node --test <dir>` fails in this sandbox because it spawns
@@ -220,5 +223,5 @@ multi-line trace markers; trace-tree navigation. M7 (formatter) is optional.
 1. `npm install` if needed, then `npm run build` and `npm test` — 819 tests,
    about two seconds.
 2. Read `ROADMAP.md`'s Agent working rules before changing anything.
-3. The two packaging gaps are a publisher id and a repository URL; the manifest
-   fields and `.vscodeignore` are otherwise ready.
+3. The manifest, publisher id and repository URL are set; the remaining publish
+   step is a Marketplace Trusted Publishing policy plus the OIDC workflow.

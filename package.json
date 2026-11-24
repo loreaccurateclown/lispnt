@@ -2,9 +2,19 @@
   "name": "lispnt",
   "displayName": "Lispnt",
   "version": "0.0.1",
+  "publisher": "SK-Clownsoft",
   "private": true,
   "description": "Lispnt - a gentle, read-only diagnostic path for Common Lisp (SBCL), alongside OLIVE.",
   "license": "MIT",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/loreaccurateclown/lispnt.git"
+  },
+  "bugs": {
+    "url": "https://github.com/loreaccurateclown/lispnt/issues"
+  },
+  "homepage": "https://github.com/loreaccurateclown/lispnt#readme",
   "main": "./dist/src/extension.js",
   "engines": {
     "vscode": "^1.147.0"
