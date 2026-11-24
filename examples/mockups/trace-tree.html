@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Lispnt — trace tree mockup</title>
+    <style>
+      :root {
+        --bg: #1e1e1e;
+        --sidebar: #252526;
+        --panel: #181818;
+        --border: #3c3c3c;
+        --text: #cccccc;
+        --muted: #9d9d9d;
+        --accent: #007acc;
+        --hover: #2a2d2e;
+        --error: #f14c4c;
+        --warn: #cca700;
+        --ui: -apple-system, "Segoe UI", system-ui, sans-serif;
+        --mono: "Cascadia Code", Consolas, "Courier New", monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: #111;
+        color: var(--text);
+        font: 13px/1.4 var(--ui);
+        padding: 24px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 18px;
+      }
+      .window {
+        width: min(1180px, 100%);
+        border: 1px solid #444;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+        display: flex;
+        background: var(--bg);
+        min-height: 560px;
+      }
+      .activity {
+        width: 48px;
+        background: #333333;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding-top: 8px;
+        gap: 14px;
+      }
+      .activity .icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 4px;
+        display: grid;
+        place-items: center;
+        color: #858585;
+        font-size: 15px;
+      }
+      .activity .icon.active {
+        color: #ffffff;
+        border-left: 2px solid var(--accent);
+        border-radius: 0;
+      }
+      .sidebar {
+        width: 320px;
+        background: var(--sidebar);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+      }
+      .side-title {
+        height: 35px;
+        display: flex;
+        align-items: center;
+        padding: 0 12px;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #bbbbbb;
+      }
+      .view-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 4px 8px 4px 12px;
+        border-top: 1px solid var(--border);
+        background: var(--sidebar);
+        cursor: pointer;
+        user-select: none;
+      }
+      .view-header .name {
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .view-header .tools { display: flex; gap: 2px; }
+      .view-header .tool {
+        width: 22px; height: 22px;
+        display: grid; place-items: center;
+        border-radius: 4px; color: #cccccc; font-size: 13px;
+      }
+      .view-header .tool:hover { background: var(--hover); }
+      .tree { flex: 1; padding: 4px 0; overflow: auto; }
+      .node { display: flex; align-items: center; gap: 4px; height: 22px; padding-right: 8px; cursor: pointer; }
+      .node:hover { background: var(--hover); }
+      .node.selected { background: #04395e; }
+      .chev {
+        width: 16px; height: 16px; display: grid; place-items: center;
+        color: #cccccc; flex: none;
+      }
+      .chev.blank { visibility: hidden; }
+      .chev svg { transition: transform 0.08s ease; }
+      .chev.open svg { transform: rotate(90deg); }
+      .kind { width: 16px; height: 16px; flex: none; display: grid; place-items: center; }
+      .label { white-space: nowrap; font-size: 13px; }
+      .label .fn { color: #dcdcaa; }
+      .label .args { color: #cccccc; }
+      .desc { color: var(--muted); font-size: 12px; margin-left: 6px; }
+      .desc.ok { color: #89d185; }
+      .desc.err { color: var(--error); }
+      .desc.key { color: #d7ba7d; }
+      .depth { color: #6a6a6a; font-size: 11px; margin-left: 6px; }
+      .children { display: block; }
+      .children.collapsed { display: none; }
+      .view-message {
+        border-top: 1px solid var(--border);
+        padding: 6px 12px;
+        color: var(--muted);
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .empty {
+        padding: 14px 16px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      .empty code { color: #ce9178; font-family: var(--mono); }
+      .editor { flex: 1; background: var(--bg); display: flex; flex-direction: column; }
+      .tabs { display: flex; height: 35px; background: #252526; border-bottom: 1px solid var(--border); }
+      .tab {
+        display: flex; align-items: center; gap: 8px;
+        padding: 0 14px; font-size: 13px; color: var(--muted);
+        border-right: 1px solid var(--border);
+      }
+      .tab.active { background: var(--bg); color: #ffffff; box-shadow: inset 0 1px 0 var(--accent); }
+      .code {
+        flex: 1; padding: 12px 0; overflow: auto;
+        font: 13px/1.55 var(--mono);
+        counter-reset: line;
+      }
+      .line { display: flex; white-space: pre; }
+      .line::before {
+        counter-increment: line;
+        content: counter(line);
+        width: 46px; padding-right: 14px;
+        text-align: right; color: #6e7681; user-select: none;
+      }
+      .line.marked { background: #2b2b1a; }
+      .line.marked::after {
+        content: "  ← the marker is a comment, so SBCL still loads the file";
+        color: #6a6a6a; font-family: var(--ui); font-size: 12px;
+      }
+      .kw { color: #569cd6; }
+      .fn { color: #dcdcaa; }
+      .num { color: #b5cea8; }
+      .cmt { color: #6a9955; }
+      .note {
+        width: min(1180px, 100%);
+        color: #9d9d9d;
+        font-size: 12.5px;
+        line-height: 1.6;
+      }
+      .note h2 { font-size: 13px; color: #cccccc; margin: 0 0 6px; font-weight: 600; }
+      .note ul { margin: 0; padding-left: 18px; }
+      .note code { color: #ce9178; font-family: var(--mono); font-size: 12px; }
+      .state-buttons { display: flex; gap: 8px; }
+      .state-buttons button {
+        background: #0e639c; color: #fff; border: 0; border-radius: 3px;
+        padding: 5px 10px; font-size: 12px; cursor: pointer;
+      }
+      .state-buttons button.secondary { background: #3a3d41; }
+    </style>
+  </head>
+  <body>
+    <div class="state-buttons">
+      <button id="expand">Expand all</button>
+      <button id="collapse" class="secondary">Collapse to depth 1</button>
+    </div>
+
+    <div class="window">
+      <div class="activity">
+        <div class="icon" title="Explorer">🗋</div>
+        <div class="icon" title="Search">⌕</div>
+        <div class="icon" title="Source control">⑂</div>
+        <div class="icon active" title="Lispnt">λ</div>
+        <div class="icon" title="Extensions">▦</div>
+      </div>
+
+      <div class="sidebar">
+        <div class="side-title">Lispnt</div>
+        <div class="view-header">
+          <span class="name">Trace</span>
+          <span class="tools">
+            <span class="tool" title="Run the ;;[trace] calls again">⟳</span>
+            <span class="tool" title="Collapse all">⌄</span>
+            <span class="tool" title="More actions">⋯</span>
+          </span>
+        </div>
+
+        <div class="tree" id="tree">
+          <div class="node selected" data-toggle="fact">
+            <span class="chev open" data-chev="fact"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 1 L7 5 L2 9 Z" fill="currentColor"/></svg></span>
+            <span class="kind" title="marked call">◆</span>
+            <span class="label">(fact 4)</span>
+            <span class="desc">line 12</span>
+          </div>
+          <div class="children" data-children="fact">
+            <div class="node" data-toggle="f0">
+              <span class="chev open" data-chev="f0"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 1 L7 5 L2 9 Z" fill="currentColor"/></svg></span>
+              <span class="kind" title="function">ƒ</span>
+              <span class="label"><span class="fn">FACT</span><span class="args">(4)</span></span>
+              <span class="desc ok">= 24</span>
+            </div>
+            <div class="children" data-children="f0">
+              <div class="node" data-toggle="f1">
+                <span class="chev open" data-chev="f1"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 1 L7 5 L2 9 Z" fill="currentColor"/></svg></span>
+                <span class="kind" title="function">ƒ</span>
+                <span class="label"><span class="fn">FACT</span><span class="args">(3)</span></span>
+                <span class="desc ok">= 6</span>
+              </div>
+              <div class="children" data-children="f1">
+                <div class="node" data-toggle="f2">
+                  <span class="chev open" data-chev="f2"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 1 L7 5 L2 9 Z" fill="currentColor"/></svg></span>
+                  <span class="kind" title="function">ƒ</span>
+                  <span class="label"><span class="fn">FACT</span><span class="args">(2)</span></span>
+                  <span class="desc ok">= 2</span>
+                </div>
+                <div class="children" data-children="f2">
+                  <div class="node" data-toggle="f3">
+                    <span class="chev open" data-chev="f3"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 1 L7 5 L2 9 Z" fill="currentColor"/></svg></span>
+                    <span class="kind" title="function">ƒ</span>
+                    <span class="label"><span class="fn">FACT</span><span class="args">(1)</span></span>
+                    <span class="desc ok">= 1</span>
+                  </div>
+                  <div class="children" data-children="f3">
+                    <div class="node">
+                      <span class="chev blank"></span>
+                      <span class="kind" title="deepest call">ƒ</span>
+                      <span class="label"><span class="fn">FACT</span><span class="args">(0)</span></span>
+                      <span class="desc ok">= 1</span>
+                      <span class="depth">max depth</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="node" data-toggle="throw">
+            <span class="chev" data-chev="throw"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 1 L7 5 L2 9 Z" fill="currentColor"/></svg></span>
+            <span class="kind" title="marked call">◆</span>
+            <span class="label">(car 1)</span>
+            <span class="desc">line 27</span>
+          </div>
+          <div class="children collapsed" data-children="throw">
+            <div class="node">
+              <span class="chev blank"></span>
+              <span class="kind" title="threw" style="color: var(--error)">ƒ</span>
+              <span class="label"><span class="fn">HEAD-OF</span><span class="args">(1)</span></span>
+              <span class="desc err">!! type-error</span>
+            </div>
+          </div>
+
+          <div class="node" data-toggle="empty">
+            <span class="chev" data-chev="empty"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 1 L7 5 L2 9 Z" fill="currentColor"/></svg></span>
+            <span class="kind" title="marked call">◆</span>
+            <span class="label">(fib 30)</span>
+            <span class="desc">line 34</span>
+          </div>
+          <div class="children collapsed" data-children="empty">
+            <div class="node">
+              <span class="chev blank"></span>
+              <span class="kind" title="truncated">⋯</span>
+              <span class="label">1,000 calls recorded, then stopped</span>
+              <span class="desc key">truncated</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="view-message" title="3 marked calls · 1,006 calls recorded · deepest 4 · final value 24">3 calls · 1,006 recorded · depth 4 · value 24</div>
+      </div>
+
+      <div class="editor">
+        <div class="tabs">
+          <div class="tab active">fact.lisp</div>
+          <div class="tab">Trace</div>
+        </div>
+        <div class="code">
+<div class="line"><span class="kw">(defun</span> <span class="fn">fact</span> (n) (<span class="kw">if</span> (= n <span class="num">0</span>) <span class="num">1</span> (* n (<span class="fn">fact</span> (<span class="fn">1-</span> n)))))</div>
+<div class="line cmt">;;; the trace marker names the call to follow, not the function</div>
+<div class="line marked"><span class="cmt">;;[trace] (fact 4)</span></div>
+<div class="line"></div>
+<div class="line"><span class="kw">(defun</span> <span class="fn">head-of</span> (x) (<span class="fn">car</span> x))</div>
+<div class="line cmt">;;[trace] (car 1)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <h2>What this mocks, and what it maps to</h2>
+      <ul>
+        <li>A <strong>view container</strong> in the activity bar holding one view, "Trace". The header row is the view's title bar; the three icons are <code>createTreeView</code>'s actions plus <code>showCollapseAll</code>.</li>
+        <li>Nodes come from the existing <code>TraceFrame</code> tree: one root per marked call (label = the expression, description = its line), children are frames (label = <code>NAME(args)</code>, description = <code>= result</code>). Chevron state is <code>TreeItem.collapsibleState</code>; children are fetched lazily, so a 1,000-frame trace never builds 1,000 nodes at once.</li>
+        <li>A frame that threw carries <code>!! code</code> in the error colour and the error theme icon; the truncated case is one leaf saying how many calls were recorded before the cap.</li>
+        <li>The bottom line is <code>treeView.message</code>: the same summary the text view prints, so the two views agree.</li>
+        <li>Selecting a node does nothing yet; the natural next step is reveal the call's source line, which needs call-site positions the observer does not record.</li>
+      </ul>
+    </div>
+
+    <script>
+      for (const node of document.querySelectorAll(".node[data-toggle]")) {
+        node.addEventListener("click", () => {
+          const key = node.dataset.toggle;
+          const children = document.querySelector('[data-children="' + key + '"]');
+          const chev = document.querySelector('[data-chev="' + key + '"]');
+          if (!children || !chev) return;
+          children.classList.toggle("collapsed");
+          chev.classList.toggle("open");
+          for (const other of document.querySelectorAll(".node.selected")) {
+            if (other !== node) other.classList.remove("selected");
+          }
+          node.classList.add("selected");
+        });
+      }
+
+      const setDepth = (open) => {
+        for (const children of document.querySelectorAll(".children")) {
+          children.classList.toggle("collapsed", !open);
+        }
+        for (const chev of document.querySelectorAll(".chev[data-chev]")) {
+          chev.classList.toggle("open", open);
+        }
+      };
+
+      document.getElementById("expand").addEventListener("click", () => setDepth(true));
+      document.getElementById("collapse").addEventListener("click", () => {
+        setDepth(false);
+        for (const key of ["fact"]) {
+          document.querySelector('[data-children="' + key + '"]').classList.remove("collapsed");
+          document.querySelector('[data-chev="' + key + '"]').classList.add("open");
+        }
+      });
+    </script>
+  </body>
+</html>
