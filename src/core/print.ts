@@ -3,6 +3,8 @@ import type { ArrayValue, ConsValue, LispValue, StructValue } from "./values";
 export interface PrintOptions {
   maxElements?: number;
   maxDepth?: number;
+  // PRINC-style rendering: strings unquoted, characters bare, recursively.
+  princ?: boolean;
 }
 
 const DEFAULT_MAX_ELEMENTS = 8;
@@ -11,6 +13,7 @@ const DEFAULT_MAX_DEPTH = 3;
 interface PrintState {
   maxElements: number;
   maxDepth: number;
+  princ: boolean;
   ancestors: Set<ConsValue | ArrayValue | StructValue>;
 }
 
@@ -18,6 +21,7 @@ export function printValue(value: LispValue, options?: PrintOptions): string {
   const state: PrintState = {
     maxElements: options?.maxElements ?? DEFAULT_MAX_ELEMENTS,
     maxDepth: options?.maxDepth ?? DEFAULT_MAX_DEPTH,
+    princ: options?.princ ?? false,
     ancestors: new Set(),
   };
 
@@ -33,9 +37,9 @@ function render(value: LispValue, depth: number, state: PrintState): string {
     case "number":
       return String(value.value);
     case "string":
-      return quoteString(value.value);
+      return state.princ ? value.value : quoteString(value.value);
     case "char":
-      return renderChar(value.value);
+      return state.princ ? value.value : renderChar(value.value);
     case "builtin":
       return `#<builtin ${value.name}>`;
     case "function":

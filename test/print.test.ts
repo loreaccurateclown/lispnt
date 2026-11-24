@@ -298,3 +298,9 @@ test("prints a hash table", () => {
 
   assert.equal(printValue(table), "#<hash-table :count 1>");
 });
+
+test("renders princ-style when asked", () => {
+  assert.equal(printValue(str("a"), { princ: true }), "a");
+  assert.equal(printValue({ kind: "char", value: "a" }, { princ: true }), "a");
+  assert.equal(printValue(list(str("a")), { princ: true }), "(a)");
+});

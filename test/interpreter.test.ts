@@ -1595,3 +1595,79 @@ test("calls a function per entry with maphash", () => {
   ].join(" ");
   assert.deepEqual(evalIn(source), num(3));
 });
+
+//LLM-written tests for FORMAT
+test("returns the formatted string for a NIL destination", () => {
+  assert.equal(
+    printValueOf('(format nil "~a = ~d" (quote x) 42)'),
+    '"X = 42"',
+  );
+});
+
+test("discards output for a T destination and returns NIL", () => {
+  assert.deepEqual(evalIn('(format t "hello ~a" 1)'), NIL);
+});
+
+test("renders ~a princ-style and ~s readably", () => {
+  assert.equal(printValueOf('(format nil "~a" "x")'), '"x"');
+  assert.equal(printValueOf('(format nil "~s" "x")'), '"\\"x\\""');
+  assert.equal(printValueOf('(format nil "~a" #\\a)'), '"a"');
+  assert.equal(printValueOf('(format nil "~s" #\\a)'), '"#\\\\a"');
+});
+
+test("keeps princ-style inside a list", () => {
+  assert.equal(printValueOf('(format nil "~a" (list 1 "x"))'), '"(1 x)"');
+});
+
+test("rejects a non-integer for ~d", () => {
+  assert.throws(() => evalIn('(format nil "~d" 4.5)'), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "type-error";
+  });
+});
+
+test("writes newlines with ~% and a fresh line with ~&", () => {
+  // A quoted string keeps a raw newline, as SBCL prints it.
+  assert.equal(printValueOf('(format nil "a~%b")'), '"a\nb"');
+  assert.equal(printValueOf('(format nil "a~&b")'), '"a\nb"');
+  assert.equal(printValueOf('(format nil "~&x")'), '"x"');
+});
+
+test("writes a literal tilde", () => {
+  assert.equal(printValueOf('(format nil "100~~")'), '"100~"');
+});
+
+test("reports a character that is not a directive", () => {
+  assert.throws(() => evalIn('(format nil "~q" 1)'), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "malformed-form";
+  });
+});
+
+test("reports a standard directive it has not built", () => {
+  for (const source of ['(format nil "~b" 5)', '(format nil "~x" 255)', '(format nil "~c" 65)']) {
+    assert.throws(() => evalIn(source), (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "unsupported-standard";
+    }, source);
+  }
+});
+
+test("reports directive parameters and modifiers", () => {
+  for (const source of ['(format nil "~5d" 1)', '(format nil "~:@a" 1)']) {
+    assert.throws(() => evalIn(source), (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "unsupported-standard";
+    }, source);
+  }
+});
+
+test("reports a missing argument and a trailing tilde", () => {
+  for (const source of ['(format nil "~a/~a" 1)', '(format nil "abc~")']) {
+    assert.throws(() => evalIn(source), (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "malformed-form";
+    }, source);
+  }
+});
+
+test("refuses a destination that is not NIL or T", () => {
+  assert.throws(() => evalIn('(format #(1) "x")'), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "unsupported-standard";
+  });
+});

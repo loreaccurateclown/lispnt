@@ -8,7 +8,7 @@
 // Names are uppercase because that is how symbols are interned.
 export const STANDARD_SYMBOLS: ReadonlySet<string> = new Set([
   // I/O and formatting
-  "FORMAT", "PRINT", "PRIN1", "PRINC", "TERPRI", "FRESH-LINE", "WRITE", "WRITE-CHAR",
+  "PRINT", "PRIN1", "PRINC", "TERPRI", "FRESH-LINE", "WRITE", "WRITE-CHAR",
   "WRITE-LINE", "WRITE-STRING", "WRITE-TO-STRING", "PRINC-TO-STRING", "READ",
   "READ-LINE", "READ-FROM-STRING", "WITH-OUTPUT-TO-STRING", "WITH-INPUT-FROM-STRING",
   "WITH-OPEN-FILE", "WITH-OPEN-STREAM", "WITH-HASH-TABLE-ITERATOR",
@@ -60,5 +60,6 @@ export const STANDARD_SYMBOLS: ReadonlySet<string> = new Set([
   // misc
   "WARN", "ABORT", "ASSERT", "CHECK-TYPE", "SLEEP", "GC", "SAVE-LISP-AND-DIE",
 ]);
+
 
 

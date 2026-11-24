@@ -601,3 +601,119 @@ register("HASH-TABLE-P", 1, 1, (args) =>
   args[0]!.kind === "hash" ? intern("T") : NIL,
 );
 
+
+// FORMAT — a control string with a small directive language. NIL returns the
+// string; T returns NIL and discards it, because Lispnt has no console. A
+// directive CL defines but Lispnt has not built is our gap (unsupported-
+// standard); a character that is not a directive at all is the learner's
+// mistake (malformed-form).
+const implementedDirectives = new Set(["A", "S", "D", "%", "~", "&"]);
+
+// ANSI FORMAT directives. Anything here that is not in implementedDirectives is
+// valid CL we have not built.
+const standardDirectives = new Set([
+  "A", "S", "D", "B", "O", "X", "R", "P", "C", "F", "E", "G", "$",
+  "%", "&", "~", "T", "<", ">", "[", "]", "{", "}", "?", "*", "^",
+  "|", "_", "I", "W", "N",
+]);
+
+function formatText(control: string, args: LispValue[]): string {
+  let out = "";
+  let next = 0;
+
+  const argument = (directive: string): LispValue => {
+    const value = args[next];
+    if (value === undefined)
+      throw new LispEvalError(
+        "malformed-form",
+        null,
+        `FORMAT: not enough arguments for ~${directive}`,
+      );
+    next += 1;
+    return value;
+  };
+
+  for (let index = 0; index < control.length; index += 1) {
+    const character = control[index]!;
+    if (character !== "~") {
+      out += character;
+      continue;
+    }
+
+    index += 1;
+    const raw = control[index];
+    if (raw === undefined)
+      throw new LispEvalError(
+        "malformed-form",
+        null,
+        "FORMAT: the control string ends with ~",
+      );
+
+    // Prefix parameters and modifiers (~5d, ~:@a, ~,2f) are not implemented.
+    if ("0123456789,:'@vV#+-".includes(raw))
+      throw new LispEvalError(
+        "unsupported-standard",
+        null,
+        "FORMAT: directive parameters and modifiers are not implemented",
+      );
+
+    const directive = raw.toUpperCase();
+
+    if (!implementedDirectives.has(directive)) {
+      if (standardDirectives.has(directive))
+        throw new LispEvalError(
+          "unsupported-standard",
+          null,
+          `FORMAT: the ~${directive} directive is not implemented`,
+        );
+      throw new LispEvalError(
+        "malformed-form",
+        null,
+        `FORMAT: ~${raw} is not a FORMAT directive`,
+      );
+    }
+
+    switch (directive) {
+      case "A":
+        out += printValue(argument("A"), { princ: true });
+        break;
+      case "S":
+        out += printValue(argument("S"));
+        break;
+      case "D":
+        out += String(expectInteger(argument("D")));
+        break;
+      case "%":
+        out += "\n";
+        break;
+      case "~":
+        out += "~";
+        break;
+      case "&":
+        // Fresh-line: only when the output does not already start a new line.
+        if (out.length > 0 && !out.endsWith("\n")) out += "\n";
+        break;
+    }
+  }
+
+  return out;
+}
+
+register("FORMAT", 2, null, (args) => {
+  const destination = args[0]!;
+  const control = expectStringValue(args[1]!);
+
+  if (destination.kind === "nil")
+    return { kind: "string", value: formatText(control, args.slice(2)) };
+
+  if (destination.kind === "symbol" && destination.name === "T") {
+    formatText(control, args.slice(2));
+    return NIL;
+  }
+
+  throw new LispEvalError(
+    "unsupported-standard",
+    null,
+    "FORMAT: only NIL and T are implemented as destinations",
+  );
+});
