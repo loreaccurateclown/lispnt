@@ -130,6 +130,56 @@ test("leaves legal binding lists alone", () => {
   assert.deepEqual(analyze("(let ((x 0) (y)) x)"), []);
 });
 
+// The same principle for the other shapes: name the repair, not the verdict.
+test("shows where a defun's name belongs", () => {
+  const [diagnostic] = analyze("(defun 5 (x) x)");
+
+  assert.equal(
+    diagnostic?.message,
+    "A DEFUN needs its name before the argument list: write `(defun name (x) …)`.",
+  );
+  assert.deepEqual(diagnostic?.end, { line: 1, column: 16, offset: 15 });
+});
+
+test("puts the learner's own name in the defun argument-list repair", () => {
+  const [diagnostic] = analyze("(defun f)");
+
+  assert.equal(
+    diagnostic?.message,
+    "A DEFUN needs an argument list after the name: write `(defun f (x) …)`.",
+  );
+});
+
+test("shows where a lambda's argument list belongs", () => {
+  const [diagnostic] = analyze("(lambda 1 2)");
+
+  assert.equal(
+    diagnostic?.message,
+    "A LAMBDA needs its argument list first: write `(lambda (x) …)`.",
+  );
+});
+
+test("shows the shape a labels definition list needs", () => {
+  const [diagnostic] = analyze("(labels 1 2)");
+
+  assert.equal(
+    diagnostic?.message,
+    "FLET and LABELS need a list of local definitions: write `(labels ((name (x) …)) …)`.",
+  );
+});
+
+test("marks the local definition that has no argument list", () => {
+  const [diagnostic] = analyze("(labels ((f)) 2)");
+
+  assert.equal(diagnostic?.code, "local-definition");
+  assert.equal(
+    diagnostic?.message,
+    "Each local function is a name and an argument list: write `((name (x) …))`.",
+  );
+  assert.deepEqual(diagnostic?.position, { line: 1, column: 10, offset: 9 });
+  assert.deepEqual(diagnostic?.end, { line: 1, column: 13, offset: 12 });
+});
+
 test("reports an error that occurs after a valid first form", () => {
   const diagnostics = analyze("(list 1))");
 
@@ -181,8 +231,10 @@ test("reports a defun whose name is not a symbol", () => {
   assert.deepEqual(diagnostics[0], {
     code: "defun-name",
     severity: "error",
-    message: "A defun needs a name symbol here.",
-    position: { line: 1, column: 8, offset: 7 },
+    message:
+      "A DEFUN needs its name before the argument list: write `(defun name (x) …)`.",
+    position: { line: 1, column: 1, offset: 0 },
+    end: { line: 1, column: 16, offset: 15 },
   });
 });
 
@@ -191,7 +243,8 @@ test("reports a defun without an argument list", () => {
 
   assert.equal(diagnostics.length, 1);
   assert.equal(diagnostics[0]?.code, "defun-arglist");
-  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 12, offset: 11 });
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 1, offset: 0 });
+  assert.deepEqual(diagnostics[0]?.end, { line: 1, column: 14, offset: 13 });
 });
 
 test("reports a lambda without an argument list", () => {
@@ -199,7 +252,8 @@ test("reports a lambda without an argument list", () => {
 
   assert.equal(diagnostics.length, 1);
   assert.equal(diagnostics[0]?.code, "lambda-arglist");
-  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 9, offset: 8 });
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 1, offset: 0 });
+  assert.deepEqual(diagnostics[0]?.end, { line: 1, column: 11, offset: 10 });
 });
 
 test("reports a let without a bindings list", () => {
@@ -248,7 +302,7 @@ test("recognises an uppercase form head", () => {
 
   assert.equal(diagnostics.length, 1);
   assert.equal(diagnostics[0]?.code, "defun-name");
-  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 8, offset: 7 });
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 1, offset: 0 });
 });
 
 test("walks the tail of a dotted form once", () => {
@@ -256,7 +310,8 @@ test("walks the tail of a dotted form once", () => {
 
   assert.equal(diagnostics.length, 1);
   assert.equal(diagnostics[0]?.code, "lambda-arglist");
-  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 26, offset: 25 });
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 18, offset: 17 });
+  assert.deepEqual(diagnostics[0]?.end, { line: 1, column: 28, offset: 27 });
 });
 
 //LLM-written tests
@@ -396,7 +451,8 @@ test("reports a labels form without a definitions list", () => {
 
   assert.equal(diagnostics.length, 1);
   assert.equal(diagnostics[0]?.code, "local-definitions");
-  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 9, offset: 8 });
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 1, offset: 0 });
+  assert.deepEqual(diagnostics[0]?.end, { line: 1, column: 13, offset: 12 });
 });
 
 test("reports a labels definition whose name is not a symbol", () => {

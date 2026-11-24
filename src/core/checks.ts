@@ -58,19 +58,23 @@ function checkDefun(list: ListNode, diagnostics: Diagnostic[]): void {
     diagnostics.push(
       shapeDiagnostic(
         "defun-name",
-        "A defun needs a name symbol here.",
-        nameNode?.start ?? list.start,
+        `A DEFUN needs its name before the argument list: write ${quote("(defun name (x) …)")}.`,
+        list.start,
+        list.end,
       ),
     );
+    return; // one repair at a time: the argument list cannot be judged without a name
   }
 
   const arglistNode = list.children[2];
   if (arglistNode === undefined || !isListNode(arglistNode)) {
+    const example = `(defun ${symbolText(nameNode)} (x) …)`;
     diagnostics.push(
       shapeDiagnostic(
         "defun-arglist",
-        "A defun needs an argument list here.",
-        arglistNode?.start ?? list.start,
+        `A DEFUN needs an argument list after the name: write ${quote(example)}.`,
+        list.start,
+        list.end,
       ),
     );
   }
@@ -82,8 +86,9 @@ function checkLambda(list: ListNode, diagnostics: Diagnostic[]): void {
     diagnostics.push(
       shapeDiagnostic(
         "lambda-arglist",
-        "A lambda needs an argument list here.",
-        arglistNode?.start ?? list.start,
+        `A LAMBDA needs its argument list first: write ${quote("(lambda (x) …)")}.`,
+        list.start,
+        list.end,
       ),
     );
   }
@@ -193,21 +198,22 @@ function checkLocalFunctions(list: ListNode, diagnostics: Diagnostic[]): void {
     diagnostics.push(
       shapeDiagnostic(
         "local-definitions",
-        "This form needs a list of local function definitions here.",
-        definitionsNode?.start ?? list.start,
+        `FLET and LABELS need a list of local definitions: write ${quote("(labels ((name (x) …)) …)")}.`,
+        list.start,
+        list.end,
       ),
     );
     return;
   }
 
+  const local = "Each local function is a name and an argument list: write `((name (x) …))`.";
+
   for (const definitionNode of definitionsNode.children) {
     if (!isListNode(definitionNode)) {
       diagnostics.push(
-        shapeDiagnostic(
-          "local-definition",
-          "Each local function needs a name symbol and an argument list.",
-          definitionNode.start,
-        ),
+        // An atom entry has no recorded end, and the whole line is a better
+        // target than guessing where the token stops.
+        shapeDiagnostic("local-definition", local, definitionNode.start),
       );
       continue;
     }
@@ -224,8 +230,9 @@ function checkLocalFunctions(list: ListNode, diagnostics: Diagnostic[]): void {
       diagnostics.push(
         shapeDiagnostic(
           "local-definition",
-          "Each local function needs a name symbol and an argument list.",
+          local,
           definitionNode.start,
+          definitionNode.end,
         ),
       );
     }
@@ -255,3 +262,5 @@ function shapeDiagnostic(
   const diagnostic: Diagnostic = { code, severity: "error", message, position };
   return end === undefined ? diagnostic : { ...diagnostic, end };
 }
+
+
