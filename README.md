@@ -31,7 +31,7 @@ What it finds today:
   the outermost opened on line 1" — and it underlines `(+` rather than a single
   character. When one closer was deleted and it made a form swallow the form
   below it, the mark moves to that form and says which line is off: "Bracket
-  mismatch at line 10: COUNT-ZEROS was given 3 arguments; it takes 1 to 2. Check
+  mismatch at line 9: COUNT-ZEROS was given 3 arguments; it takes 1 to 2. Check
   the COUNT-ZEROS form for a missing closing bracket." A missing closer also
   swallows the rest of the file, so names defined after it would look undefined;
   those warnings are dropped when the file's own recovered text defines the
@@ -152,3 +152,5 @@ MIT. See [LICENSE](LICENSE).
 The activity-bar icon is the λ glyph outline traced from Cascadia Code, which is
 licensed under the SIL Open Font License; the SVG's comment records the
 provenance.
+
+

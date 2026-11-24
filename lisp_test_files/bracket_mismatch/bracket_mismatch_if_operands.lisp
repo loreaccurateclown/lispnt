@@ -1,7 +1,7 @@
 ;;;; Lispnt fixture: one closer deleted, so the form below becomes a fourth
-;;;; part of the IF. The red mark is expected. With the missing closer
-;;;; supplied at the end, the recovered parse finds an operand-count
-;;;; complaint on line 6: IF takes a test, a then-branch and an optional else.
+;;;; part of the IF. Expected mark: the IF on line 6, message "Bracket
+;;;; mismatch at line 6: IF was given 4 forms; it takes 2 or 3: a test-form, a
+;;;; then-form and an optional else-form. Check the IF form for a missing bracket."
 (defun classify (x)
   (if (> x 0)
       1
