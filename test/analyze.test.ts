@@ -96,7 +96,7 @@ test("keeps an arity mistake for a function the file defines", () => {
 // there, and the message names the line and the form.
 function bracketFixture(name: string): string {
   return readFileSync(
-    join(process.cwd(), "lisp_test_files", "bracket_mismatch", name),
+    join(process.cwd(), "fixtures", "cases", "bracket_mismatch", name),
     "utf8",
   );
 }
@@ -182,7 +182,7 @@ test("keeps the unclosed form as the mark when the recovered read is clean", () 
 // repair first so it is the thing acted on.
 test("reports the double brackets and the missing closer together", () => {
   const [diagnostic] = analyze(
-    bracketFixture("pending/let-double-brackets.lisp"),
+    bracketFixture("let-double-brackets.lisp"),
   );
 
   assert.equal(diagnostic?.code, "bracket-mismatch");
@@ -836,7 +836,7 @@ test("keeps a runtime type error next to a name check", () => {
 // The showcase files are what a learner opens to see each mark in the editor, so
 // a change in what they report means the demonstration has drifted.
 test("the diagnostic showcase still demonstrates what it claims", () => {
-  const directory = join(process.cwd(), "examples", "diagnostics");
+  const directory = join(process.cwd(), "fixtures", "showcase");
   const expected: Record<string, readonly string[]> = {
     "reader-stray-closer.lisp": ["stray-closer"],
     "reader-unterminated-list.lisp": ["unterminated-list"],

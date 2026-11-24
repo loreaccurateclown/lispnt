@@ -10,8 +10,7 @@ HANDOFF.md
 ROADMAP.md
 bench/**
 userdocs/**
-examples/**
-lisp_test_files/**
+fixtures/**
 .github/**
 src/**
 test/**

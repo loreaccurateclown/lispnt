@@ -37,7 +37,7 @@ Tests: **819** across fourteen suites — 73 reader, 101 analyze, 317 interprete
 trace, 24 trace-cases, 9 trace-tree, 10 value-hints, 39 extension.
 
 Corpus (the manual check, no committed script): **63 files**, 26 under
-`lisp_test_files/` and 37 from a local lab corpus (skip `backup/`),
+`fixtures/cases/` and 37 from a local lab corpus,
 89 KB. `analyze` reports **31 diagnostics**: 10 on learner code, 2 deliberate on
 `bracket_imbalance.lisp`, and 19 deliberate on the bracket-mismatch fixtures.
 8 files produce a trace frame and 13 produce a value hint once the `;;[trace]`
@@ -94,8 +94,8 @@ markers run.
 | `src/extension.ts` | the only file importing `vscode` for value; adapters |
 | `src/extension/` | activation, diagnostics presentation, tree model, hint/hover providers |
 | `test/` | one suite per area; `npm test` runs each file explicitly |
-| `examples/diagnostics/` | one file per mark the extension can show; a test locks the codes |
-| `lisp_test_files/` | fixtures; `bracket_mismatch/` holds the deliberate broken files |
+| `fixtures/showcase/` | one file per mark the extension can show; a test locks the codes |
+| `fixtures/` | `cases/` for the suites, `showcase/` for the editor demonstration; see its README |
 | `bench/run.mjs` | the timing pass |
 
 ## Core design facts

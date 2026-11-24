@@ -2,7 +2,7 @@
 // files?" with numbers instead of an impression. Run it with `npm run bench`.
 //
 // The corpus walk is the same one the roadmap's counts use: the files under
-// lisp_test_files/ plus, if LISP_CORPUS names a folder, that folder too, with
+// fixtures/cases/ plus, if LISP_CORPUS names a folder, that folder too, with
 // backup/ skipped and only *.lisp/*.lsp read. Set LISP_CORPUS to your own lab
 // files to measure against code you care about; nothing here is packaged.
 //
@@ -17,11 +17,11 @@ import { traceCases, traceExpressions } from "../dist/src/core/trace-cases.js";
 
 const extraCorpus = process.env.LISP_CORPUS;
 if (extraCorpus !== undefined && !existsSync(extraCorpus)) {
-  console.log(`LISP_CORPUS is set but not found: ${extraCorpus} — measuring lisp_test_files only.`);
+  console.log(`LISP_CORPUS is set but not found: ${extraCorpus} — measuring fixtures/cases only.`);
 }
 const ROOTS = [
   ...new Set(
-    ["lisp_test_files", ...(extraCorpus !== undefined && existsSync(extraCorpus) ? [extraCorpus] : [])].map(
+    ["fixtures/cases", ...(extraCorpus !== undefined && existsSync(extraCorpus) ? [extraCorpus] : [])].map(
       (root) => resolve(root),
     ),
   ),

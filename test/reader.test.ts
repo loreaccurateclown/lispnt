@@ -501,7 +501,7 @@ function collectStrings(node: AstNode): string[] {
 }
 
 function readFixture(name: string): string {
-  return readFileSync(join(__dirname, "../../lisp_test_files", name), "utf8");
+  return readFileSync(join(__dirname, "../../fixtures/cases", name), "utf8");
 }
 
 test("parses a real Lisp file from disk", () => {

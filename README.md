@@ -120,8 +120,8 @@ in PowerShell, `LISP_CORPUS=/path/to/labs` in bash).
 | `src/extension/api.ts` | the seam: every editor capability Lispnt uses, declared here |
 | `src/extension.ts` | the one file that imports `vscode` for value |
 | `src/extension/` | wiring, diagnostics presentation, trace view model, hint providers |
-| `examples/diagnostics/` | one file per mark the extension can show |
-| `lisp_test_files/` | fixtures, including the deliberate broken files in `bracket_mismatch/` |
+| `fixtures/showcase/` | one file per mark the extension can show |
+| `fixtures/cases/` | fixtures the suites read; `bracket_mismatch/` holds the deliberate broken files |
 | `bench/` | the timings above |
 
 The core is testable in plain Node, which is why the editor is behind that seam.
