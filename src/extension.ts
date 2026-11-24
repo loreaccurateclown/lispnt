@@ -115,6 +115,9 @@ function adapter(): VsCodeApi {
     getConfiguration: (section) => ({
       get: (key) => vscode.workspace.getConfiguration(section).get(key),
     }),
+    setContext: async (key, value) => {
+      await vscode.commands.executeCommand("setContext", key, value);
+    },
     registerTextDocumentContentProvider: (scheme, provide) => {
       const changed = new vscode.EventEmitter<vscode.Uri>();
       const registration = vscode.workspace.registerTextDocumentContentProvider(

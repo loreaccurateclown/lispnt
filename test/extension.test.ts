@@ -59,6 +59,7 @@ interface Fake {
   readonly refreshes: string[];
   readonly shown: string[];
   readonly trees: FakeTree[];
+  readonly contexts: Array<{ key: string; value: unknown }>;
   open(document: VsTextDocument): void;
   change(document: VsTextDocument): void;
   save(document: VsTextDocument): void;
@@ -79,6 +80,7 @@ function fakeApi(options: FakeOptions = {}): Fake {
   const refreshes: string[] = [];
   const shown: string[] = [];
   const trees: FakeTree[] = [];
+  const contexts: Fake["contexts"] = [];
   let active = options.active;
 
   const openListeners: Array<(document: VsTextDocument) => void> = [];
@@ -161,6 +163,9 @@ function fakeApi(options: FakeOptions = {}): Fake {
         return undefined;
       },
     }),
+    setContext: async (key, value) => {
+      contexts.push({ key, value });
+    },
     registerTextDocumentContentProvider: (scheme, provide) => {
       providers.set(scheme, provide);
       return {
@@ -192,6 +197,7 @@ function fakeApi(options: FakeOptions = {}): Fake {
     refreshes,
     shown,
     trees,
+    contexts,
     open: (document) => {
       for (const listener of openListeners) listener(document);
     },
@@ -223,15 +229,20 @@ function activate(fake: Fake, debounceMs = 0): void {
 const wait = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
-test("registers a collection, a channel, the listeners, a trace provider and two commands", () => {
+test("registers the collection, channel, listeners, trace provider and four commands", () => {
   const fake = fakeApi();
   activate(fake);
 
   assert.deepEqual(fake.collections, ["lispnt"]);
   assert.deepEqual(fake.channels, ["Lispnt"]);
-  assert.deepEqual([...fake.commands.keys()], ["lispnt.checkFile", "lispnt.showTrace"]);
+  assert.deepEqual([...fake.commands.keys()], [
+    "lispnt.checkFile",
+    "lispnt.showTrace",
+    "lispnt.pinTrace",
+    "lispnt.unpinTrace",
+  ]);
   assert.deepEqual([...fake.providers.keys()], ["lispnt-trace"]);
-  assert.equal(fake.context.subscriptions.length, 13);
+  assert.equal(fake.context.subscriptions.length, 15);
 });
 
 test("reports a mistake in an opened Lisp file", () => {
@@ -491,7 +502,7 @@ test("the trace command says so when there is no active document", async () => {
   await fake.commands.get("lispnt.showTrace")?.();
 
   assert.deepEqual(fake.shown, []);
-  assert.match(fake.channelLines[0] ?? "", /no active document to trace/);
+  assert.match(fake.channelLines[0] ?? "", /no Lisp document to trace/);
 });
 
 test("creates the activity-bar tree and starts on the active document", () => {
@@ -598,4 +609,67 @@ test("typing does not re-trace, so the tree does not run the file per keystroke"
   await wait(25);
 
   assert.equal(fake.trees[0]?.refreshes, before);
+});
+
+test("focusing the generated trace document leaves the tree on its file", () => {
+  const active = documentOf("a.lisp", `${FACT}\n;;[trace] (fact 3)`);
+  const fake = fakeApi({ active });
+  activate(fake);
+
+  fake.setActive(documentOf("Trace", "root: 0: FACT(3) => 6", "markdown"));
+  fake.activeEditorChanged();
+
+  const roots = fake.trees[0]?.provider.getChildren() as readonly TraceNode[];
+  assert.equal(roots.length, 1);
+  assert.equal(roots[0]?.label, "(fact 3)");
+});
+
+test("closing the traced file clears the tree", () => {
+  const active = documentOf("a.lisp", `${FACT}\n;;[trace] (fact 3)`);
+  const fake = fakeApi({ active });
+  activate(fake);
+
+  fake.close(active);
+
+  assert.deepEqual(fake.trees[0]?.provider.getChildren(), []);
+  assert.match(fake.trees[0]?.message ?? "", /Open a Lisp file/);
+});
+
+test("pinning holds the tree while another Lisp file is worked on", async () => {
+  const first = documentOf("one.lisp", `${FACT}\n;;[trace] (fact 3)`);
+  const fake = fakeApi({ active: first });
+  activate(fake);
+
+  await fake.commands.get("lispnt.pinTrace")?.();
+  assert.deepEqual(fake.contexts.at(-1), { key: "lispnt.pinned", value: true });
+  assert.match(fake.trees[0]?.message ?? "", /pinned/);
+
+  const second = documentOf(
+    "two.lisp",
+    "(defun add (a b) (+ a b))\n;;[trace] (add 3 4)",
+  );
+  fake.setActive(second);
+  fake.activeEditorChanged();
+
+  const pinnedRoots = fake.trees[0]?.provider.getChildren() as readonly TraceNode[];
+  assert.equal(pinnedRoots[0]?.label, "(fact 3)");
+
+  await fake.commands.get("lispnt.unpinTrace")?.();
+  const released = fake.trees[0]?.provider.getChildren() as readonly TraceNode[];
+  assert.equal(released[0]?.label, "(add 3 4)");
+});
+
+test("the trace command falls back to the traced file when focus is elsewhere", async () => {
+  const lisp = documentOf("a.lisp", `${FACT}\n;;[trace] (fact 3)`);
+  const fake = fakeApi({ active: lisp });
+  activate(fake);
+
+  fake.setActive(documentOf("Trace", "root: 0: FACT(3) => 6", "markdown"));
+  fake.activeEditorChanged();
+
+  await fake.commands.get("lispnt.showTrace")?.();
+
+  const provide = fake.providers.get("lispnt-trace");
+  assert.ok(provide !== undefined);
+  assert.match(provide("lispnt-trace:/Trace"), /root: 0: FACT\(3\) => 6/);
 });

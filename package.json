@@ -19,9 +19,39 @@
       },
       {
         "command": "lispnt.showTrace",
-        "title": "Lispnt: Show Trace"
+        "title": "Lispnt: Open Text Trace View",
+        "icon": "$(output)"
+      },
+      {
+        "command": "lispnt.pinTrace",
+        "title": "Lispnt: Pin the Traced File",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "lispnt.unpinTrace",
+        "title": "Lispnt: Unpin the Traced File",
+        "icon": "$(pinned)"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "lispnt.showTrace",
+          "when": "view == lispnt.trace",
+          "group": "navigation"
+        },
+        {
+          "command": "lispnt.pinTrace",
+          "when": "view == lispnt.trace && !lispnt.pinned",
+          "group": "navigation"
+        },
+        {
+          "command": "lispnt.unpinTrace",
+          "when": "view == lispnt.trace && lispnt.pinned",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "Lispnt",
       "properties": {

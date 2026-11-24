@@ -103,6 +103,9 @@ export interface VsCodeApi {
     listener: (document: VsTextDocument | undefined) => void,
   ): VsDisposable;
   getConfiguration(section: string): VsConfiguration;
+  // Sets a when-clause context key, so a contributed menu can swap its entry —
+  // the pin button uses it to become an unpin button.
+  setContext(key: string, value: unknown): Promise<void>;
   registerTextDocumentContentProvider(
     scheme: string,
     provide: (uri: string) => string,

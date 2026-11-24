@@ -98,10 +98,19 @@ export function activateExtension(
     );
   };
 
-  // The tree view mirrors the active file's marked calls. It is built from the
-  // same traceCases data as the text view, so the two cannot disagree; 6.4 adds
-  // the automatic refreshes, and until then the command refreshes both.
+  // The tree view mirrors the traced file's marked calls. It is built from the
+  // same traceCases data as the text view, so the two cannot disagree.
   let roots: readonly TraceNode[] = [];
+  // The file the tree is showing. Bringing a non-Lisp editor into focus — the
+  // text trace itself, a README — leaves it alone; only a Lisp file retargets.
+  let treeDocument: VsTextDocument | undefined;
+  let pinned = false;
+
+  const activeLispDocument = (): VsTextDocument | undefined => {
+    const document = api.activeTextDocument;
+    return document !== undefined && isLispDocument(document) ? document : undefined;
+  };
+
   const traceTreeView = api.createTreeView<TraceNode>("lispnt.trace", {
     getChildren: (node) => (node === undefined ? roots : node.children),
     getTreeItem: (node) => ({
@@ -114,9 +123,11 @@ export function activateExtension(
     }),
   });
 
-  const refreshTraceTree = (): void => {
-    const document = api.activeTextDocument;
-    if (document === undefined || !isLispDocument(document)) {
+  const refreshTraceTree = (target?: VsTextDocument): void => {
+    if (target !== undefined) treeDocument = target;
+    const document = treeDocument;
+
+    if (document === undefined) {
       roots = [];
       traceTreeView.setMessage("Open a Lisp file to see its traces.");
       traceTreeView.refresh();
@@ -125,8 +136,21 @@ export function activateExtension(
 
     const view = traceTree(document.getText());
     roots = view.kind === "tree" ? view.roots : [];
-    traceTreeView.setMessage(view.message);
+    traceTreeView.setMessage(pinned ? `${view.message} · pinned` : view.message);
     traceTreeView.refresh();
+  };
+
+  const togglePin = async (): Promise<void> => {
+    pinned = !pinned;
+    await api.setContext("lispnt.pinned", pinned);
+
+    // Unpinning hands the tree back to whatever Lisp file is in front.
+    if (!pinned) {
+      const document = activeLispDocument();
+      if (document !== undefined) treeDocument = document;
+    }
+
+    refreshTraceTree();
   };
 
   // The trace view is a generated read-only document. Keeping the text in a map
@@ -139,9 +163,11 @@ export function activateExtension(
   );
 
   const showTrace = async (): Promise<void> => {
-    const document = api.activeTextDocument;
+    // Focus may be on the text trace itself, so fall back to the file the tree
+    // already shows rather than tracing the generated document.
+    const document = activeLispDocument() ?? treeDocument;
     if (document === undefined) {
-      channel.appendLine("Lispnt: no active document to trace");
+      channel.appendLine("Lispnt: no Lisp document to trace");
       return;
     }
 
@@ -149,7 +175,7 @@ export function activateExtension(
       const text = document.getText();
       traceText.set(TRACE_URI, formatTraceReport(document.uri.fsPath, text));
       traceProvider.refresh(TRACE_URI);
-      refreshTraceTree();
+      refreshTraceTree(document);
       await api.showDocument(TRACE_URI);
     } catch (error) {
       channel.appendLine(
@@ -163,7 +189,8 @@ export function activateExtension(
   // and too much per keystroke.
   const onSave = (document: VsTextDocument): void => {
     refresh(document);
-    if (document === api.activeTextDocument) refreshTraceTree();
+    if (treeDocument !== undefined && treeDocument.uri.toString() === document.uri.toString())
+      refreshTraceTree(document);
   };
 
   context.subscriptions.push(
@@ -175,10 +202,30 @@ export function activateExtension(
     api.onDidCloseTextDocument((document) => {
       cancel(document.uri.toString());
       collection.delete(document.uri);
+
+      // The traced file went away; show another Lisp file if one is in front,
+      // but never the one being closed.
+      if (
+        treeDocument !== undefined &&
+        treeDocument.uri.toString() === document.uri.toString()
+      ) {
+        treeDocument = undefined;
+        const next = activeLispDocument();
+        if (next !== undefined && next.uri.toString() !== document.uri.toString()) {
+          treeDocument = next;
+        }
+        refreshTraceTree();
+      }
     }),
     // Activation can run before the editor is restored, so the tree also
-    // follows the active editor: that is what makes it populate on open.
-    api.onDidChangeActiveTextEditor(() => refreshTraceTree()),
+    // follows the active editor: that is what makes it populate on open. A focus
+    // change to anything that is not Lisp leaves the current trace alone, and a
+    // pinned file ignores focus changes entirely.
+    api.onDidChangeActiveTextEditor(() => {
+      if (pinned) return;
+      const document = activeLispDocument();
+      if (document !== undefined) refreshTraceTree(document);
+    }),
     traceTreeView.onDidChangeVisibility((visible) => {
       if (visible) refreshTraceTree();
     }),
@@ -191,13 +238,15 @@ export function activateExtension(
       refresh(document);
     }),
     api.registerCommand("lispnt.showTrace", showTrace),
+    api.registerCommand("lispnt.pinTrace", togglePin),
+    api.registerCommand("lispnt.unpinTrace", togglePin),
   );
 
   // Documents already open when the extension activates get checked too, so a
   // window restored on a Lisp file is not silently unchecked.
   for (const document of api.textDocuments) refresh(document);
 
-  // And the tree starts on whatever the active editor is, so opening the view
-  // shows the current file rather than an empty pane.
-  refreshTraceTree();
+  // And the tree starts on the active Lisp file, so opening the view shows the
+  // current file rather than an empty pane.
+  refreshTraceTree(activeLispDocument());
 }
