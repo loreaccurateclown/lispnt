@@ -108,21 +108,38 @@ the binding map, so the extension caches one run per document version.
 
 The core is testable in plain Node, which is why the editor is behind that seam.
 
+## Not implemented in this version
+
+Lispnt is a deliberate subset of Common Lisp. Unsupported standard syntax fails
+loudly inside Lispnt and silently for the learner: an unimplemented standard name
+is never reported as the learner's mistake. What is absent, by choice:
+
+- **Reader** — backquote/unquote/splice, `#+`/`#-`, unknown `#\` names (kept as
+  symbols), and ratios (`1/2` reads as a symbol).
+- **Checker** — `handler-case`; `defclass`, `defgeneric`, `defmethod`,
+  `defmacro`, `deftype`, `defpackage`, `with-slots`, `with-accessors`,
+  `handler-bind`, `restart-case`, `macrolet` and `symbol-macrolet`, whose bodies
+  are recognised only as opaque syntax; unused bindings; type inference; the
+  LOOP walk outside the clauses it decodes; and names defined in another file.
+- **Evaluator** — full LOOP syntax (an unhandled clause is an error rather than a
+  guess), `format` beyond `~a ~s ~d ~% ~~ ~&`, `defstruct`'s `:include` and slot
+  options such as `:type`, and `LOAD`.
+- **Trace** — a counting mode for calls too large to record, markers spanning
+  several comment lines, markers that are not line comments, and call-site
+  positions.
+- **Editor** — navigation from the trace tree to the call site.
+
 ## Limits and known divergences
 
-- A deliberate subset of Common Lisp, not a full implementation. Unsupported
-  standard syntax fails loudly inside Lispnt and silently for the learner.
-- Structure inheritance (`:include`) and slot options such as `:type` are not
-  modelled.
-- `#+`/`#-`, backquote, `handler-case`, `defclass`/`defmethod` and other
-  standard forms listed in `ROADMAP.md` are not evaluated; they are recognised
-  only as opaque syntax.
-- `LOAD` is not followed: a name defined in another file is a yellow mark, not
-  a red one.
-- No ratios: integers and floats are distinguished (`1` is an integer, `1.0` a
-  float), but a division CL would answer as a fraction is a float here —
+- **No ratios.** Integers and floats are distinguished (`1` is an integer, `1.0`
+  a float), but a division CL would answer as a fraction is a float here:
   `(/ 1 2)` is `0.5`, not `1/2`.
-- There is no console, so `(format t …)` returns NIL after discarding its text.
+- **One float type, JavaScript numbers underneath.** Integers beyond 2^53 lose
+  precision (CL has bignums), and a float is single-float-shaped but printed as
+  SBCL prints one, `1.0`.
+- **No console.** `(format t …)` returns NIL after discarding its text.
+- **`LOAD` is not followed.** A name defined in another file is a yellow mark,
+  not a red one.
 
 ## License
 
