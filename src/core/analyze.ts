@@ -120,7 +120,7 @@ export function analyze(source: string): Diagnostic[] {
       code: "trace-marker",
       severity: "warning",
       message:
-        "This ;;[trace] marker has no call to follow. Write the call you want traced on the same line, for example ;;[trace] (fact 4).",
+        "This ;;[trace] marker has no test case for the function. Write the test case you want traced after [trace], for example ;;[trace] (fact 4).",
       position: { line: marker.line, column: marker.column, offset: marker.offset },
     });
   }

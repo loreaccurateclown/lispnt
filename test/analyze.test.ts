@@ -432,7 +432,7 @@ test("warns about a trace marker that names no call", () => {
   assert.equal(diagnostics[0]?.code, "trace-marker");
   assert.equal(diagnostics[0]?.severity, "warning");
   assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 1, offset: 0 });
-  assert.match(diagnostics[0]?.message ?? "", /no call to follow/);
+  assert.match(diagnostics[0]?.message ?? "", /no test case for the function/);
 });
 
 test("does not warn about a trace marker that names a call", () => {
