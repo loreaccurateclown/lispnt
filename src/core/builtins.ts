@@ -659,38 +659,52 @@ register("BUTLAST", 1, 2, (args) => {
 register("SCHAR", 2, 2, (args) => charAt(args[0]!, args[1]!, "SCHAR"));
 register("CHAR", 2, 2, (args) => charAt(args[0]!, args[1]!, "CHAR"));
 
-register("CHAR=", 2, 2, (args) =>
-  expectCharValue(args[0]!) === expectCharValue(args[1]!)
-    ? intern("T")
-    : NIL,
+// CL's character comparisons are variadic: they compare each character with the
+// one after it, and answer T for fewer than two — (char= #\a) is T. The
+// ...-EQUAL / ...-LESSP / ...-GREATERP family folds case; CHAR=, CHAR< and CHAR>
+// do not.
+function allChars(
+  args: readonly LispValue[],
+  same: (left: string, right: string) => boolean,
+): boolean {
+  for (let index = 1; index < args.length; index += 1) {
+    const left = expectCharValue(args[index - 1]!);
+    const right = expectCharValue(args[index]!);
+    if (!same(left, right)) return false;
+  }
+  return true;
+}
+
+const charResult = (matched: boolean): LispValue => (matched ? intern("T") : NIL);
+
+register("CHAR=", 0, null, (args) =>
+  charResult(allChars(args, (left, right) => left === right)),
 );
 
-// CHAR-EQUAL and the ...-LESSP / ...-GREATERP family ignore case; CHAR< and
-// CHAR> do not, as in CL.
-register("CHAR-EQUAL", 2, 2, (args) => {
-  const left = expectCharValue(args[0]!).toLowerCase();
-  const right = expectCharValue(args[1]!).toLowerCase();
-  return left === right ? intern("T") : NIL;
-});
-
-register("CHAR-LESSP", 2, 2, (args) => {
-  const left = expectCharValue(args[0]!).toLowerCase();
-  const right = expectCharValue(args[1]!).toLowerCase();
-  return left < right ? intern("T") : NIL;
-});
-
-register("CHAR-GREATERP", 2, 2, (args) => {
-  const left = expectCharValue(args[0]!).toLowerCase();
-  const right = expectCharValue(args[1]!).toLowerCase();
-  return left > right ? intern("T") : NIL;
-});
-
-register("CHAR<", 2, 2, (args) =>
-  expectCharValue(args[0]!) < expectCharValue(args[1]!) ? intern("T") : NIL,
+register("CHAR-EQUAL", 0, null, (args) =>
+  charResult(
+    allChars(args, (left, right) => left.toLowerCase() === right.toLowerCase()),
+  ),
 );
 
-register("CHAR>", 2, 2, (args) =>
-  expectCharValue(args[0]!) > expectCharValue(args[1]!) ? intern("T") : NIL,
+register("CHAR-LESSP", 0, null, (args) =>
+  charResult(
+    allChars(args, (left, right) => left.toLowerCase() < right.toLowerCase()),
+  ),
+);
+
+register("CHAR-GREATERP", 0, null, (args) =>
+  charResult(
+    allChars(args, (left, right) => left.toLowerCase() > right.toLowerCase()),
+  ),
+);
+
+register("CHAR<", 0, null, (args) =>
+  charResult(allChars(args, (left, right) => left < right)),
+);
+
+register("CHAR>", 0, null, (args) =>
+  charResult(allChars(args, (left, right) => left > right)),
 );
 
 register("CHAR-UPCASE", 1, 1, (args) => {
@@ -893,6 +907,12 @@ const hashKeyIds = new WeakMap<object, number>();
 let nextHashKeyId = 1;
 
 export function hashTableKey(value: LispValue, test: HashTest): string {
+  // EQUALP keys fold case in strings and characters and descend into lists,
+  // arrays and structures, so "abc" and "ABC" are one key. The recursive key
+  // carries a seen set, because a cyclic structure would otherwise recurse
+  // forever; a cycle falls back to identity, which is stable for the run.
+  if (test === "equalp") return `p:${equalpKey(value, new Set())}`;
+
   switch (value.kind) {
     case "nil":
       return "nil";
@@ -908,20 +928,75 @@ export function hashTableKey(value: LispValue, test: HashTest): string {
       break;
   }
 
-  if (test === "eq" || test === "eql") {
-    const object = value as unknown as object;
-    const known = hashKeyIds.get(object);
-    if (known !== undefined) return `o:${known}`;
-    const id = nextHashKeyId;
-    nextHashKeyId += 1;
-    hashKeyIds.set(object, id);
-    return `o:${id}`;
-  }
+  if (test === "eq" || test === "eql") return `o:${identityId(value)}`;
 
   return `e:${printValue(value, {
     maxElements: Number.POSITIVE_INFINITY,
     maxDepth: Number.POSITIVE_INFINITY,
   })}`;
+}
+
+function identityId(value: LispValue): number {
+  const object = value as unknown as object;
+  const known = hashKeyIds.get(object);
+  if (known !== undefined) return known;
+  const id = nextHashKeyId;
+  nextHashKeyId += 1;
+  hashKeyIds.set(object, id);
+  return id;
+}
+
+// The canonical form EQUALP would compare by: numbers by value, strings and
+// characters ignoring case, conses, arrays and structures recursively.
+function equalpKey(value: LispValue, seen: Set<object>): string {
+  switch (value.kind) {
+    case "nil":
+      return "nil";
+    case "number":
+      return `n:${value.value}`;
+    case "string":
+      return `s:${value.value.toLowerCase()}`;
+    case "char":
+      return `c:${value.value.toLowerCase()}`;
+    case "symbol":
+      return `y:${value.name}`;
+    case "cons": {
+      const object = value as unknown as object;
+      if (seen.has(object)) return `o:${identityId(value)}`;
+      seen.add(object);
+      const key = `(${equalpKey(value.car, seen)} . ${equalpKey(value.cdr, seen)})`;
+      seen.delete(object);
+      return key;
+    }
+    case "array": {
+      const object = value as unknown as object;
+      if (seen.has(object)) return `o:${identityId(value)}`;
+      seen.add(object);
+      const length = arrayLength(value);
+      const parts: string[] = [];
+      for (let index = 0; index < length; index += 1) {
+        const item = value.elements[index];
+        parts.push(item === undefined ? "nil" : equalpKey(item, seen));
+      }
+      seen.delete(object);
+      return `#(${parts.join(" ")})`;
+    }
+    case "struct": {
+      const object = value as unknown as object;
+      if (seen.has(object)) return `o:${identityId(value)}`;
+      seen.add(object);
+      const slots: string[] = [];
+      for (const [name, slot] of value.slots) {
+        slots.push(`${name}=${equalpKey(slot, seen)}`);
+      }
+      seen.delete(object);
+      return `#S(${value.type} ${slots.join(" ")})`;
+    }
+    default:
+      // Hash tables compare by identity under EQUALP, and so do streams,
+      // functions and the rest.
+      return `o:${identityId(value)}`;
+  }
 }
 
 const hashTests: ReadonlyMap<string, HashTest> = new Map<string, HashTest>([
@@ -1236,11 +1311,24 @@ function stringDesignator(value: LispValue, name: string): string {
   throw new LispEvalError("type-error", null, `${name}: expected a string designator, got ${value.kind}`);
 }
 
-register("STRING<", 2, 2, (args) =>
-  stringDesignator(args[0]!, "STRING<") < stringDesignator(args[1]!, "STRING<")
-    ? intern("T")
-    : NIL,
-);
+// CL's STRING< answers the index of the first character where the strings differ
+// (or the length of the shorter one when it is a proper prefix), and NIL when the
+// order does not hold — not T, because callers may use the index.
+register("STRING<", 2, 2, (args) => {
+  const left = stringDesignator(args[0]!, "STRING<");
+  const right = stringDesignator(args[1]!, "STRING<");
+  const limit = Math.min(left.length, right.length);
+
+  for (let index = 0; index < limit; index += 1) {
+    const a = left[index]!;
+    const b = right[index]!;
+    if (a !== b) return a < b ? { kind: "number", value: index } : NIL;
+  }
+
+  return left.length < right.length
+    ? { kind: "number", value: left.length }
+    : NIL;
+});
 
 
 

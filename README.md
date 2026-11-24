@@ -114,8 +114,6 @@ The core is testable in plain Node, which is why the editor is behind that seam.
   standard syntax fails loudly inside Lispnt and silently for the learner.
 - Structure inheritance (`:include`) and slot options such as `:type` are not
   modelled.
-- A hash table with `:test equalp` still finds keys by printed form, so
-  `"abc"` and `"ABC"` are two keys even though `(equalp "abc" "ABC")` is T.
 - `#+`/`#-`, backquote, `handler-case`, `defclass`/`defmethod` and other
   standard forms listed in `ROADMAP.md` are not evaluated; they are recognised
   only as opaque syntax.

@@ -1133,6 +1133,14 @@ test("compares characters with and without case", () => {
   // ...-LESSP family is not.
   assert.deepEqual(evalIn("(char< #\\A #\\a)"), intern("T"));
   assert.ok(isNil(evalIn("(char-lessp #\\A #\\a)")));
+  // CL's character comparisons are variadic and answer T for fewer than two.
+  assert.deepEqual(evalIn("(char= #\\a)"), intern("T"));
+  assert.deepEqual(evalIn("(char= #\\a #\\a #\\a)"), intern("T"));
+  assert.ok(isNil(evalIn("(char= #\\a #\\a #\\b)")));
+  assert.deepEqual(evalIn("(char< #\\a #\\b #\\c)"), intern("T"));
+  assert.ok(isNil(evalIn("(char< #\\a #\\c #\\b)")));
+  assert.deepEqual(evalIn("(char-lessp #\\a #\\B #\\c)"), intern("T"));
+  assert.deepEqual(evalIn("(char=)"), intern("T"));
 });
 
 test("recognises a real and a string", () => {
@@ -1924,6 +1932,41 @@ test("matches string keys by value", () => {
     evalIn('(setf h (make-hash-table)) (setf (gethash "k" h) 1) (gethash "k" h)'),
     num(1),
   );
+  // A default (eql) table is case-sensitive...
+  assert.deepEqual(
+    evalIn('(setf h (make-hash-table)) (setf (gethash "k" h) 1) (gethash "K" h)'),
+    NIL,
+  );
+  // ...and an equalp table folds case, in atoms and inside lists and vectors.
+  assert.deepEqual(
+    evalIn(
+      '(setf h (make-hash-table :test (quote equalp))) (setf (gethash "abc" h) 1) (gethash "ABC" h)',
+    ),
+    num(1),
+  );
+  assert.deepEqual(
+    evalIn(
+      '(setf h (make-hash-table :test (quote equalp))) (setf (gethash (list 1 "abc") h) 1) (gethash (list 1 "ABC") h)',
+    ),
+    num(1),
+  );
+  assert.deepEqual(
+    evalIn(
+      '(setf h (make-hash-table :test (quote equalp))) (setf (gethash (vector 1 2) h) 1) (gethash (vector 1 2) h)',
+    ),
+    num(1),
+  );
+});
+
+test("canonicalises a cyclic equalp key by identity instead of looping", () => {
+  const source = [
+    "(let ((key (list 1)))",
+    "  (setf (cdr key) key)",
+    "  (let ((h (make-hash-table :test (quote equalp))))",
+    "    (setf (gethash key h) 'found)",
+    "    (gethash key h)))",
+  ].join(" ");
+  assert.deepEqual(evalIn(source), intern("FOUND"));
 });
 
 test("accepts :size and the rehash hints as layout hints", () => {
@@ -2240,12 +2283,17 @@ test("rejects sorting something that is not a sequence", () => {
   );
 });
 
-test("compares strings and string designators", () => {
-  assert.deepEqual(evalIn('(string< "a" "b")'), intern("T"));
+// CL's string< answers the index of the first difference, not T. Verified
+// against SBCL: ("a" "b") is 0, ("a" "ab") is 1 because "a" is a proper prefix.
+test("compares strings and string designators by mismatch index", () => {
+  assert.deepEqual(evalIn('(string< "a" "b")'), num(0));
+  assert.deepEqual(evalIn('(string< "abc" "abd")'), num(2));
+  assert.deepEqual(evalIn('(string< "a" "ab")'), num(1));
+  assert.deepEqual(evalIn('(string< "" "a")'), num(0));
   assert.deepEqual(evalIn('(string< "b" "a")'), NIL);
   assert.deepEqual(evalIn('(string< "a" "a")'), NIL);
-  assert.deepEqual(evalIn("(string< 'a 'b)"), intern("T"));
-  assert.deepEqual(evalIn("(string< #\\a #\\b)"), intern("T"));
+  assert.deepEqual(evalIn("(string< 'a 'b)"), num(0));
+  assert.deepEqual(evalIn("(string< #\\a #\\b)"), num(0));
 });
 
 test("builds the corpus word-counts table by incf", () => {
