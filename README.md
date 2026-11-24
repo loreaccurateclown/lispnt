@@ -119,6 +119,9 @@ The core is testable in plain Node, which is why the editor is behind that seam.
   only as opaque syntax.
 - `LOAD` is not followed: a name defined in another file is a yellow mark, not
   a red one.
+- No ratios: integers and floats are distinguished (`1` is an integer, `1.0` a
+  float), but a division CL would answer as a fraction is a float here —
+  `(/ 1 2)` is `0.5`, not `1/2`.
 - There is no console, so `(format t …)` returns NIL after discarding its text.
 
 ## License

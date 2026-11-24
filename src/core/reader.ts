@@ -12,6 +12,9 @@ export interface AtomNode {
   readonly atomType: "symbol" | "number" | "string" | "char"; //This is apparently needed due to JS treating string values and Lisp symbols as equivalent.
   readonly value: unknown;
   readonly start: Position;
+  // A number written as a float (1.0, 1e3) says so here; an integer leaves it
+  // off, because this is where CL's integer/float distinction still exists.
+  readonly float?: boolean;
 }
 
 export interface ListNode {
@@ -187,12 +190,16 @@ export function createReader(source: string): Reader {
 
     const n = Number(text);
     const checkIfNum = text !== "" && !Number.isNaN(n);
+    // Number("1.0"), Number("1e3") and Number("1") all give a JS number; the
+    // written token is the only place the float distinction survives.
+    const isFloat = checkIfNum && /[.eE]/.test(text);
 
     return {
       kind: "atom",
       atomType: checkIfNum ? "number" : "symbol",
       value: checkIfNum ? n : text,
       start, //pretty cool that you can just return a value with the same name without needing to specify the field
+      ...(isFloat ? { float: true } : {}),
     };
   }
 

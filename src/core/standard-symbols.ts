@@ -35,8 +35,8 @@ export const STANDARD_SYMBOLS: ReadonlySet<string> = new Set([
   // numbers
   "ABS", "GCD", "LCM", "ROUND", "TRUNCATE", "CEILING", "SIGNUM",
   "FLOAT", "RATIONAL", "NUMERATOR", "DENOMINATOR",
-  "ASH", "LOG", "EXP", "SIN", "COS", "TAN", "RANDOM", "FLOATP",
-  "RATIONALP", "PLUSP", "MINUSP",
+  "ASH", "LOG", "EXP", "SIN", "COS", "TAN", "RANDOM",
+  "PLUSP", "MINUSP",
 
   // strings and characters
   "STRING", "STRING-UPCASE", "STRING-DOWNCASE", "STRING-CAPITALIZE",

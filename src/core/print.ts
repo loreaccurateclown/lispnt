@@ -35,7 +35,11 @@ function render(value: LispValue, depth: number, state: PrintState): string {
     case "symbol":
       return value.name;
     case "number":
-      return String(value.value);
+      // A float keeps its decimal point even when the value is whole: SBCL
+      // prints 1.0, not 1.
+      return value.float === true && Number.isInteger(value.value)
+        ? `${value.value}.0`
+        : String(value.value);
     case "string":
       return state.princ ? value.value : quoteString(value.value);
     case "char":

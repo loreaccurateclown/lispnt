@@ -10,6 +10,8 @@ import {
   HashTest,
   intern,
   isNil,
+  isFloatNumber,
+  numberValue,
   LispValue,
   NIL,
   StreamValue,
@@ -173,7 +175,10 @@ export function consForm(value: LispValue): LispValue[] {
 export function isEq(left: LispValue, right: LispValue): boolean {
   if (left === right) return true; //because it is
   if (left.kind === "number" && right.kind === "number")
-    return left.value === right.value;
+    return (
+      left.value === right.value &&
+      (left.float === true) === (right.float === true)
+    );
   if (left.kind === "string" && right.kind === "string")
     return left.value === right.value;
   // SBCL answers EQ true for two characters with the same code, though the
@@ -222,20 +227,23 @@ export function register(
 
 //apparently you can just set these without a function container? they're saved to a table somewhere? I don't know
 //2 hours later: I remembered what RAM is. The table sits in RAM. computeing
-register("+", 0, null, (args) => ({
-  kind: "number",
-  value: args.reduce((total, arg) => total + expectNumber(arg), 0),
-}));
+register("+", 0, null, (args) =>
+  numberValue(
+    args.reduce((total, arg) => total + expectNumber(arg), 0),
+    args.some(isFloatNumber),
+  ),
+);
 
 register("-", 1, null, (args) => {
   const first = expectNumber(args[0]!);
-  if (args.length === 1) return { kind: "number", value: -first };
-  return {
-    kind: "number",
-    value: args
+  if (args.length === 1)
+    return numberValue(-first, isFloatNumber(args[0]!));
+  return numberValue(
+    args
       .slice(1)
       .reduce((total, arg) => total - expectNumber(arg), first),
-  };
+    args.some(isFloatNumber),
+  );
 });
 
 register("CAR", 1, 1, (args) => carOf(args[0]!));
@@ -324,23 +332,31 @@ function isEqualP(left: LispValue, right: LispValue): boolean {
   return false;
 }
 
+// CL's / on integers answers a ratio when the division is not exact. Lispnt has
+// no ratios, so a non-exact integer division becomes a float instead; that is
+// the one place the float type stands in for the answer CL would give.
+function dividedValue(total: number, sawFloat: boolean): LispValue {
+  if (sawFloat) return numberValue(total, true);
+  return numberValue(total, !Number.isInteger(total));
+}
+
 register("/", 1, null, (args) => {
   //division. not too sure since Lisp does division Weirdly
   const first = expectNumber(args[0]!);
   if (args.length === 1) {
     if (first === 0)
       throw new LispEvalError("division-by-zero", null, "/: division by zero");
-    return { kind: "number", value: 1 / first }; //moment of truth
+    return dividedValue(1 / first, isFloatNumber(args[0]!)); //moment of truth
   }
-  return {
-    kind: "number",
-    value: args.slice(1).reduce((total, arg) => {
+  return dividedValue(
+    args.slice(1).reduce((total, arg) => {
       const divisor = expectNumber(arg);
       if (divisor === 0)
         throw new LispEvalError("division-by-zero", null, "/: division by zero");
       return total / divisor; //hmm
     }, first),
-  };
+    args.some(isFloatNumber),
+  );
 });
 
 register("APPEND", 0, null, (args) => {
@@ -568,10 +584,15 @@ register("STRINGP", 1, 1, (args) =>
 );
 register("INTEGERP", 1, 1, (args) => {
   const value = args[0]!;
-  return value.kind === "number" && Number.isInteger(value.value)
-    ? intern("T")
-    : NIL;
+  return value.kind === "number" && value.float !== true ? intern("T") : NIL;
 });
+register("FLOATP", 1, 1, (args) =>
+  args[0]!.kind === "number" && args[0]!.float === true ? intern("T") : NIL,
+);
+// Lispnt has no ratios, so every non-float number is a rational integer.
+register("RATIONALP", 1, 1, (args) =>
+  args[0]!.kind === "number" && args[0]!.float !== true ? intern("T") : NIL,
+);
 register("ZEROP", 1, 1, (args) =>
   expectNumber(args[0]!) === 0 ? intern("T") : NIL,
 );
@@ -582,21 +603,35 @@ register("ODDP", 1, 1, (args) =>
   expectNumber(args[0]!) % 2 !== 0 ? intern("T") : NIL,
 );
 
-register("*", 0, null, (args) => ({
-  kind: "number",
-  value: args.reduce((total, arg) => total * expectNumber(arg), 1),
-}));
-register("EXPT", 2, 2, (args) => ({
-  kind: "number",
-  value: expectNumber(args[0]!) ** expectNumber(args[1]!),
-}));
+register("*", 0, null, (args) =>
+  numberValue(
+    args.reduce((total, arg) => total * expectNumber(arg), 1),
+    args.some(isFloatNumber),
+  ),
+);
+// An exact integer power stays an integer; anything else is a float.
+register("EXPT", 2, 2, (args) => {
+  const base = args[0]!;
+  const exponent = args[1]!;
+  const value = expectNumber(base) ** expectNumber(exponent);
+  const exact =
+    !isFloatNumber(base) &&
+    !isFloatNumber(exponent) &&
+    Number.isInteger(expectNumber(exponent)) &&
+    expectNumber(exponent) >= 0 &&
+    Number.isInteger(value);
+  return numberValue(value, !exact);
+});
 register("MOD", 2, 2, (args) => {
   const divisor = expectNumber(args[1]!);
   if (divisor === 0)
     throw new LispEvalError("division-by-zero", null, "MOD: division by zero");
   // CL's mod takes the sign of the divisor; JS % takes the sign of the dividend
   const remainder = (expectNumber(args[0]!) % divisor) + divisor;
-  return { kind: "number", value: remainder % divisor };
+  return numberValue(
+    remainder % divisor,
+    isFloatNumber(args[0]!) || isFloatNumber(args[1]!),
+  );
 });
 register("FLOOR", 1, 2, (args) => {
   const value = expectNumber(args[0]!);
@@ -613,8 +648,12 @@ register("FLOOR", 1, 2, (args) => {
   return {
     kind: "values",
     values: [
-      { kind: "number", value: quotient },
-      { kind: "number", value: value - quotient * divisor },
+      numberValue(quotient),
+      numberValue(
+        value - quotient * divisor,
+        isFloatNumber(args[0]!) ||
+          (args[1] !== undefined && isFloatNumber(args[1]!)),
+      ),
     ],
   };
 });
@@ -626,30 +665,38 @@ register("SQRT", 1, 1, (args) => {
       null,
       "SQRT: cannot take the square root of a negative number",
     );
-  return { kind: "number", value: Math.sqrt(value) };
+  const root = Math.sqrt(value);
+  return numberValue(
+    root,
+    isFloatNumber(args[0]!) || !Number.isInteger(root),
+  );
 });
 
 //LLM-written registrations for the evaluator-gap slice
-register("1+", 1, 1, (args) => ({
-  kind: "number",
-  value: expectNumber(args[0]!) + 1,
-}));
+register("1+", 1, 1, (args) =>
+  numberValue(expectNumber(args[0]!) + 1, isFloatNumber(args[0]!)),
+);
 
-register("1-", 1, 1, (args) => ({
-  kind: "number",
-  value: expectNumber(args[0]!) - 1,
-}));
+register("1-", 1, 1, (args) =>
+  numberValue(expectNumber(args[0]!) - 1, isFloatNumber(args[0]!)),
+);
 
+// MAX and MIN answer one of their arguments, so the winner's type comes with it:
+// (max 3 2.0) is 3, an integer, while (max 1 2.0) is 2.0.
 register("MAX", 1, null, (args) => {
-  let best = expectNumber(args[0]!);
-  for (const arg of args.slice(1)) best = Math.max(best, expectNumber(arg));
-  return { kind: "number", value: best };
+  let best = args[0]!;
+  for (const arg of args.slice(1)) {
+    if (expectNumber(arg) > expectNumber(best)) best = arg;
+  }
+  return numberValue(expectNumber(best), isFloatNumber(best));
 });
 
 register("MIN", 1, null, (args) => {
-  let best = expectNumber(args[0]!);
-  for (const arg of args.slice(1)) best = Math.min(best, expectNumber(arg));
-  return { kind: "number", value: best };
+  let best = args[0]!;
+  for (const arg of args.slice(1)) {
+    if (expectNumber(arg) < expectNumber(best)) best = arg;
+  }
+  return numberValue(expectNumber(best), isFloatNumber(best));
 });
 
 register("BUTLAST", 1, 2, (args) => {
@@ -747,9 +794,9 @@ const typePredicates = new Map<string, (value: LispValue) => boolean>([
   ["HASH-TABLE", (value) => value.kind === "hash"],
   ["STREAM", (value) => value.kind === "stream"],
   ["NUMBER", (value) => value.kind === "number"],
-  ["INTEGER", (value) => value.kind === "number" && Number.isInteger(value.value)],
-  ["RATIONAL", (value) => value.kind === "number" && Number.isInteger(value.value)],
-  ["FLOAT", (value) => value.kind === "number" && !Number.isInteger(value.value)],
+  ["INTEGER", (value) => value.kind === "number" && value.float !== true],
+  ["RATIONAL", (value) => value.kind === "number" && value.float !== true],
+  ["FLOAT", (value) => value.kind === "number" && value.float === true],
   ["LIST", (value) => value.kind === "cons" || isNil(value)],
   ["CONS", (value) => value.kind === "cons"],
   ["ATOM", (value) => value.kind !== "cons"],
@@ -850,7 +897,10 @@ function unsupportedType(message: string): LispEvalError {
 // characters by value, symbols by name, anything else by identity.
 function isEql(left: LispValue, right: LispValue): boolean {
   if (left.kind === "number" && right.kind === "number")
-    return left.value === right.value;
+    return (
+      left.value === right.value &&
+      (left.float === true) === (right.float === true)
+    );
   if (left.kind === "char" && right.kind === "char")
     return left.value === right.value;
   if (left.kind === "symbol" && right.kind === "symbol")
@@ -867,8 +917,11 @@ function matchesNumberRange(
   kind: string,
 ): boolean {
   if (value.kind !== "number") return false;
-  if (kind === "INTEGER" && !Number.isInteger(value.value)) return false;
-  if (kind === "FLOAT" && Number.isInteger(value.value)) return false;
+  // The number's own type decides INTEGER and FLOAT; RATIONAL is every number
+  // that is not a float, because Lispnt has no ratios.
+  if (kind === "INTEGER" && value.float === true) return false;
+  if (kind === "FLOAT" && value.float !== true) return false;
+  if (kind === "RATIONAL" && value.float === true) return false;
 
   const low = bounds[0];
   const high = bounds[1];
@@ -938,7 +991,8 @@ export function hashTableKey(value: LispValue, test: HashTest): string {
     case "nil":
       return "nil";
     case "number":
-      return `n:${value.value}`;
+      // EQL and EQUAL keep 1 and 1.0 apart; EQUALP does not, and returned earlier.
+      return `n:${value.float === true ? "f" : "i"}:${value.value}`;
     case "string":
       return `s:${value.value}`;
     case "char":
@@ -1360,6 +1414,5 @@ register("STRING<", 2, 2, (args) => {
     ? { kind: "number", value: left.length }
     : NIL;
 });
-
 
 

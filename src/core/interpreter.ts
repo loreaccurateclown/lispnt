@@ -4,6 +4,8 @@ import {
   cons,
   intern,
   isNil,
+  isFloatNumber,
+  numberValue,
   Env,
   isTruthy,
   type KeywordParameter,
@@ -470,7 +472,7 @@ function evaluateInner(node: AstNode, env: Env): LispValue {
   if (raw.startsWith(":")) return intern(raw);
 
   if (node.atomType === "number")
-    return { kind: "number", value: Number(node.value) };
+    return numberValue(Number(node.value), node.float === true);
   if (node.atomType === "string")
     return { kind: "string", value: String(node.value) };
   if (node.atomType === "char")
@@ -897,14 +899,16 @@ function evalIncDecf(form: ListNode, env: Env, sign: number): LispValue {
     );
 
   const place = resolvePlace(placeNode, env);
-  const amount =
-    form.children[2] === undefined
-      ? 1
-      : expectNumber(evaluate(form.children[2]!, env));
-  const next: LispValue = {
-    kind: "number",
-    value: expectNumber(place.get()) + amount * sign,
-  };
+  const amountNode = form.children[2];
+  const amountValue =
+    amountNode === undefined ? undefined : evaluate(amountNode, env);
+  const amount = amountValue === undefined ? 1 : expectNumber(amountValue);
+  const current = place.get();
+  const next = numberValue(
+    expectNumber(current) + amount * sign,
+    isFloatNumber(current) ||
+      (amountValue !== undefined && isFloatNumber(amountValue)),
+  );
   place.set(next);
   return next;
 }
@@ -1856,7 +1860,11 @@ interface AccumulatorState {
   readonly into: string | undefined;
   list: LispValue[];
   total: number;
+  // Whether the running total has seen a float, so a SUM keeps CL's type.
+  float: boolean;
   best: number | undefined;
+  // The floatness of the value that won MAXIMIZE/MINIMIZE.
+  bestFloat: boolean;
 }
 
 type AccumulatorKind =
@@ -1893,7 +1901,9 @@ function collectAccumulators(clauses: LoopClause[]): Accumulators {
       into,
       list: [],
       total: 0,
+      float: false,
       best: undefined,
+      bestFloat: false,
     };
     all.push(state);
     return state;
@@ -1938,11 +1948,11 @@ function accumulatorValue(accumulator: AccumulatorState): LispValue {
   if (accumulator.kind === "collect" || accumulator.kind === "append")
     return listToValue(accumulator.list);
   if (accumulator.kind === "sum" || accumulator.kind === "count")
-    return { kind: "number", value: accumulator.total };
+    return numberValue(accumulator.total, accumulator.float);
   if (accumulator.kind === "maximize" || accumulator.kind === "minimize")
     return accumulator.best === undefined
       ? NIL
-      : { kind: "number", value: accumulator.best };
+      : numberValue(accumulator.best, accumulator.bestFloat);
   return NIL;
 }
 
@@ -1963,6 +1973,7 @@ function accumulate(
       accumulator.list.push(...consForm(value));
       break;
     case "sum":
+      if (isFloatNumber(value)) accumulator.float = true;
       accumulator.total += expectNumber(value);
       break;
     case "count":
@@ -1970,14 +1981,18 @@ function accumulate(
       break;
     case "maximize": {
       const number = expectNumber(value);
-      if (accumulator.best === undefined || number > accumulator.best)
+      if (accumulator.best === undefined || number > accumulator.best) {
         accumulator.best = number;
+        accumulator.bestFloat = isFloatNumber(value);
+      }
       break;
     }
     case "minimize": {
       const number = expectNumber(value);
-      if (accumulator.best === undefined || number < accumulator.best)
+      if (accumulator.best === undefined || number < accumulator.best) {
         accumulator.best = number;
+        accumulator.bestFloat = isFloatNumber(value);
+      }
       break;
     }
   }
@@ -2485,7 +2500,7 @@ export function astToValue(node: AstNode): LispValue {
 
   if (node.kind === "atom") {
     if (node.atomType === "number")
-      return { kind: "number", value: Number(node.value) };
+      return numberValue(Number(node.value), node.float === true);
     if (node.atomType === "string")
       return { kind: "string", value: String(node.value) };
     if (node.atomType === "char")
@@ -2503,6 +2518,7 @@ export function astToValue(node: AstNode): LispValue {
     seed,
   );
 }
+
 
 
 

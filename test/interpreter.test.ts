@@ -1274,6 +1274,57 @@ test("answers a plain type specifier", () => {
   assert.deepEqual(evalIn("(typep 5 't)"), intern("T"));
 });
 
+// CL's integer/float distinction: the reader keeps it, arithmetic carries it,
+// and eql/equal keep the two apart while = and equalp do not. Verified against
+// SBCL, except that a division which CL answers as a ratio becomes a float here.
+test("keeps integers and floats apart", () => {
+  assert.equal(printValueOf("1.0"), "1.0");
+  assert.equal(printValueOf("1"), "1");
+  assert.equal(printValueOf("(+ 1 1.0)"), "2.0");
+  assert.equal(printValueOf("(+ 1 2)"), "3");
+  assert.deepEqual(evalIn("(typep 1.0 'float)"), intern("T"));
+  assert.ok(isNil(evalIn("(typep 1 'float)")));
+  assert.ok(isNil(evalIn("(integerp 1.0)")));
+  assert.deepEqual(evalIn("(floatp 1.0)"), intern("T"));
+  assert.deepEqual(evalIn("(rationalp 1)"), intern("T"));
+  assert.ok(isNil(evalIn("(eql 1 1.0)")));
+  assert.ok(isNil(evalIn("(equal 1 1.0)")));
+  assert.deepEqual(evalIn("(equalp 1 1.0)"), intern("T"));
+  assert.deepEqual(evalIn("(= 1 1.0)"), intern("T"));
+});
+
+test("keeps exact integer results exact in division, powers and roots", () => {
+  assert.equal(printValueOf("(/ 4 2)"), "2");
+  assert.equal(printValueOf("(/ 1 2)"), "0.5");
+  assert.equal(printValueOf("(expt 2 3)"), "8");
+  assert.equal(printValueOf("(expt 2.0 3)"), "8.0");
+  assert.equal(printValueOf("(sqrt 4)"), "2");
+  assert.equal(printValueOf("(sqrt 2)"), "1.4142135623730951");
+  assert.equal(printValueOf("(max 3 2.0)"), "3");
+  assert.equal(printValueOf("(max 1 2.0)"), "2.0");
+  assert.equal(printValueOf("(multiple-value-list (floor 5.5))"), "(5 0.5)");
+});
+
+test("carries the float through incf and the loop accumulators", () => {
+  assert.equal(printValueOf("(let ((x 1.0)) (incf x))"), "2.0");
+  assert.equal(printValueOf("(loop for x in (quote (1.5 2.0)) sum x)"), "3.5");
+  assert.equal(printValueOf("(loop for x in (quote (1.0)) maximize x)"), "1.0");
+  assert.deepEqual(
+    evalIn("(floatp (loop for x in (quote (1.0)) sum x))"),
+    intern("T"),
+  );
+});
+
+test("keeps integer and float keys apart under eql", () => {
+  const source = [
+    "(let ((h (make-hash-table :test (quote eql))))",
+    "  (setf (gethash 1 h) (quote int))",
+    "  (setf (gethash 1.0 h) (quote float))",
+    "  (list (gethash 1 h) (gethash 1.0 h)))",
+  ].join(" ");
+  assert.equal(printValueOf(source), "(INT FLOAT)");
+});
+
 // Verified against SBCL: a string is a vector of characters, so it is an array
 // and a vector, and AREF reads it. Its element type is exactly CHARACTER, which
 // is why (vector t) does not hold it.
