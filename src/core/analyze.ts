@@ -195,6 +195,11 @@ interface RecoveredParse {
   readonly source: string;
 }
 
+interface Span {
+  readonly position: Position;
+  readonly end?: Position;
+}
+
 // Read the file again with the missing closers supplied at the end. Null means
 // even that read fails, which leaves the answer unknown.
 function recoveredParse(
@@ -224,7 +229,23 @@ const BRACKET_HINT_CODES: ReadonlySet<string> = new Set([
   "arity",
   "operand-count",
   "local-definition",
+  "let-binding",
+  "do-binding",
+  "do-end-test",
+  "iteration-spec",
 ]);
+
+// When one swallow produces two complaints — DO reads the end clause as a
+// binding and then has no end clause — the more specific one is the useful one.
+const BRACKET_HINT_PRIORITY: readonly string[] = [
+  "arity",
+  "local-definition",
+  "let-binding",
+  "do-binding",
+  "do-end-test",
+  "iteration-spec",
+  "operand-count",
+];
 
 function bracketMismatch(
   error: ReaderError,
@@ -235,28 +256,82 @@ function bracketMismatch(
   if (recovered === null || (error.openForms?.length ?? 1) !== 1)
     return undefined;
 
+  // The complaint may sit exactly on the unclosed form when that form is the one
+  // that swallowed the rest of the file, as a top-level definition does.
   const candidates = [
     ...checkForms(recovered.forms, recovered.source),
     ...checkNames(recovered.forms),
-  ]
-    .filter(
-      (diagnostic) =>
-        BRACKET_HINT_CODES.has(diagnostic.code) &&
-        diagnostic.position.offset > error.position.offset,
-    )
-    .sort((a, b) => a.position.offset - b.position.offset);
+  ].filter(
+    (diagnostic) =>
+      BRACKET_HINT_CODES.has(diagnostic.code) &&
+      diagnostic.position.offset >= error.position.offset,
+  );
+  if (candidates.length === 0) return undefined;
 
   // The swallow happens at the end, so the complaint nearest the end of the
-  // file is the one the missing bracket produced.
-  const candidate = candidates[candidates.length - 1];
+  // file is the one the missing bracket produced; ties go to the more specific.
+  const farthest = Math.max(
+    ...candidates.map((candidate) => candidate.position.offset),
+  );
+  const candidate = candidates
+    .filter((candidate) => candidate.position.offset === farthest)
+    .sort(
+      (a, b) =>
+        BRACKET_HINT_PRIORITY.indexOf(a.code) -
+        BRACKET_HINT_PRIORITY.indexOf(b.code),
+    )[0];
   if (candidate === undefined) return undefined;
 
-  return describeBracketMismatch(candidate, recovered.forms);
+  const span = spanForCandidate(candidate, recovered.forms);
+  if (span === undefined) return undefined;
+
+  // A swallowed sibling still stands at the start of its own line. A complaint
+  // with no line-starting form inside it did not come from the missing closer —
+  // (let (x 0), one closer short, still has a bindings mistake — so the
+  // unclosed-form mark is the honest one there.
+  const evidence =
+    hasLineStartInside(recovered.source, span) ||
+    (candidate.code === "local-definition" &&
+      startsLine(recovered.source, span.position.offset));
+  if (!evidence) return undefined;
+
+  return describeBracketMismatch(candidate, recovered.forms, span);
+}
+
+// The arity complaint points at the called name; the form to mark is the call.
+function spanForCandidate(
+  candidate: Diagnostic,
+  forms: readonly AstNode[],
+): Span | undefined {
+  if (candidate.code === "arity") {
+    const call = callingListAt(forms, candidate.position.offset);
+    return call === undefined
+      ? undefined
+      : { position: call.start, end: call.end };
+  }
+  return candidate.end === undefined
+    ? undefined
+    : { position: candidate.position, end: candidate.end };
+}
+
+function hasLineStartInside(source: string, span: Span): boolean {
+  if (span.end === undefined) return false;
+  for (let offset = span.position.offset + 1; offset < span.end.offset; offset++) {
+    if (startsLine(source, offset)) return true;
+  }
+  return false;
+}
+
+function startsLine(source: string, offset: number): boolean {
+  let at = offset - 1;
+  while (at >= 0 && (source[at] === " " || source[at] === "\t")) at -= 1;
+  return at < 0 || source[at] === "\n" || source[at] === "\r";
 }
 
 function describeBracketMismatch(
   candidate: Diagnostic,
   forms: readonly AstNode[],
+  span: Span,
 ): Diagnostic | undefined {
   const line = candidate.position.line;
 
@@ -264,17 +339,11 @@ function describeBracketMismatch(
     const info = candidate.arityInfo;
     const name = candidate.name;
     if (info === undefined || name === undefined) return undefined;
-
-    // The complaint points at the called name; the form to mark is the call.
-    const call = callingListAt(forms, candidate.position.offset);
-    return {
-      code: "bracket-mismatch",
-      severity: "error",
-      message: `Bracket mismatch at line ${line}: ${name} was given ${info.given} arguments; it takes ${describeArity(info.min, info.max)}. Check the ${name} form for a missing closing bracket.`,
-      ...(call === undefined
-        ? { position: candidate.position }
-        : { position: call.start, end: call.end }),
-    };
+    return describeBracket(
+      line,
+      `${name} was given ${info.given} arguments; it takes ${describeArity(info.min, info.max)}. Check the ${name} form for a missing closing bracket.`,
+      span,
+    );
   }
 
   if (candidate.code === "operand-count") {
@@ -284,37 +353,121 @@ function describeBracketMismatch(
     const tail = head === undefined ? undefined : operandHint(head);
     if (head === undefined || tail === undefined) return undefined;
 
-    return {
-      code: "bracket-mismatch",
-      severity: "error",
-      message: `Bracket mismatch at line ${line}: ${head} was given ${form.children.length - 1} forms; it takes ${tail}. Check the ${head} form for a missing closing bracket.`,
-      position: form.start,
-      end: form.end,
-    };
+    const given = form.children.length - 1;
+    return describeBracket(
+      line,
+      `${head} was given ${given} form${given === 1 ? "" : "s"}; it takes ${tail}. Check the ${head} form for a missing closing bracket.`,
+      span,
+    );
   }
 
   if (candidate.code === "local-definition") {
     const head = enclosingLocalFunctionForm(forms, candidate.position) ?? "LABELS";
-    const diagnostic: Diagnostic = {
-      code: "bracket-mismatch",
-      severity: "error",
-      message: `Bracket mismatch at line ${line}: a ${head} entry has no argument list; each local function needs a name and an argument list. Check the ${head} form for a missing closing bracket.`,
-      position: candidate.position,
-    };
-    return candidate.end === undefined
-      ? diagnostic
-      : { ...diagnostic, end: candidate.end };
+    return describeBracket(
+      line,
+      `a ${head} entry has no argument list; each local function needs a name and an argument list. Check the ${head} form for a missing closing bracket.`,
+      span,
+    );
+  }
+
+  if (candidate.code === "let-binding") {
+    const head = headOf(candidate, forms, "LET");
+    return describeBracket(
+      line,
+      `the ${head} binding list read a body form as a binding; each binding is a name or a (name value) pair. Check the ${head} form for a missing closing bracket.`,
+      span,
+    );
+  }
+
+  if (candidate.code === "do-binding") {
+    const head = headOf(candidate, forms, "DO");
+    return describeBracket(
+      line,
+      `the ${head} binding list read the form below it as a binding; each ${head} binding is a name or (name init step). Check the ${head} form for a missing closing bracket.`,
+      span,
+    );
+  }
+
+  if (candidate.code === "do-end-test") {
+    const head = headOf(candidate, forms, "DO");
+    return describeBracket(
+      line,
+      `the ${head} form lost its end-test clause, so a body form was read in its place; it takes (end-test result*) after the bindings. Check the ${head} form for a missing closing bracket.`,
+      span,
+    );
+  }
+
+  if (candidate.code === "iteration-spec") {
+    const head = headOf(candidate, forms, "DOTIMES");
+    const spec =
+      head === "DOLIST"
+        ? "(variable list [result])"
+        : "(variable count [result])";
+    return describeBracket(
+      line,
+      `the ${head} spec read a body form as part of it; it takes ${spec}. Check the ${head} form for a missing closing bracket.`,
+      span,
+    );
   }
 
   return undefined;
 }
 
+// The form a shape mark is about starts at its own offset, so its head names the
+// form in the message.
+function headOf(
+  candidate: Diagnostic,
+  forms: readonly AstNode[],
+  fallback: string,
+): string {
+  const form = listAt(forms, candidate.position.offset);
+  return form === undefined ? fallback : (headName(form) ?? fallback);
+}
+
+function describeBracket(
+  line: number,
+  clause: string,
+  span: Span,
+): Diagnostic {
+  const diagnostic: Diagnostic = {
+    code: "bracket-mismatch",
+    severity: "error",
+    message: `Bracket mismatch at line ${line}: ${clause}`,
+    position: span.position,
+  };
+  return span.end === undefined
+    ? diagnostic
+    : { ...diagnostic, end: span.end };
+}
+
 function operandHint(head: string): string | undefined {
-  if (head === "IF")
-    return "2 or 3: a test-form, a then-form and an optional else-form";
-  if (head === "SETQ")
-    return "pairs: a variable that is set and a form representing the value to be set";
-  return undefined;
+  switch (head) {
+    case "IF":
+      return "2 or 3: a test-form, a then-form and an optional else-form";
+    case "SETQ":
+      return "pairs: a variable that is set and a form representing the value to be set";
+    case "SETF":
+      return "pairs: a place and a form";
+    case "RETURN":
+      return "at most one value";
+    case "PUSH":
+      return "a value and a place";
+    case "POP":
+      return "a place";
+    case "INCF":
+    case "DECF":
+      return "a place and an optional amount";
+    case "MULTIPLE-VALUE-SETQ":
+      return "a list of names and one form";
+    case "MULTIPLE-VALUE-BIND":
+      return "a list of names and the form that produces the values";
+    case "DEFPARAMETER":
+      return "a name, an initial value and an optional description";
+    case "DEFVAR":
+      return "a name with an optional initial value and description";
+    default:
+      return undefined;
+  }
 }
 
 function describeArity(min: number, max: number | null): string {

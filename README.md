@@ -32,7 +32,12 @@ What it finds today:
   character. When one closer was deleted and it made a form swallow the form
   below it, the mark moves to that form and says which line is off: "Bracket
   mismatch at line 9: COUNT-ZEROS was given 3 arguments; it takes 1 to 2. Check
-  the COUNT-ZEROS form for a missing closing bracket." A missing closer also
+  the COUNT-ZEROS form for a missing closing bracket." That covers a call's
+  arguments, the operand count of the common special forms, a LET binding list,
+  DO clauses, DOTIMES/DOLIST specs and a LABELS entry. The mark only moves when a
+  form inside the recovered complaint starts its own line — the shape a swallowed
+  sibling leaves — so a form that was already malformed keeps the plain unclosed
+  message. A missing closer also
   swallows the rest of the file, so names defined after it would look undefined;
   those warnings are dropped when the file's own recovered text defines the
   name, while warnings the file really has stay.

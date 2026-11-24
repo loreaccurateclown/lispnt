@@ -177,6 +177,103 @@ test("keeps the unclosed form as the mark when the recovered read is clean", () 
   assert.deepEqual(spanOf(diagnostic), [5, 1, 5, 7]);
 });
 
+// The other forms a deleted closer can break. Each fixture is one swallow, and
+// the recovered read names the form that swallowed its sibling.
+const moreBracketCases: readonly {
+  readonly file: string;
+  readonly message: string;
+  readonly span: readonly number[];
+}[] = [
+  {
+    file: "setf.lisp",
+    message:
+      "Bracket mismatch at line 6: SETF was given 3 forms; it takes pairs: a place and a form. Check the SETF form for a missing closing bracket.",
+    span: [6, 3, 7, 13],
+  },
+  {
+    file: "return.lisp",
+    message:
+      "Bracket mismatch at line 6: RETURN was given 2 forms; it takes at most one value. Check the RETURN form for a missing closing bracket.",
+    span: [6, 3, 7, 13],
+  },
+  {
+    file: "push.lisp",
+    message:
+      "Bracket mismatch at line 6: PUSH was given 3 forms; it takes a value and a place. Check the PUSH form for a missing closing bracket.",
+    span: [6, 3, 7, 17],
+  },
+  {
+    file: "pop.lisp",
+    message:
+      "Bracket mismatch at line 6: POP was given 2 forms; it takes a place. Check the POP form for a missing closing bracket.",
+    span: [6, 3, 7, 17],
+  },
+  {
+    file: "incf.lisp",
+    message:
+      "Bracket mismatch at line 6: INCF was given 3 forms; it takes a place and an optional amount. Check the INCF form for a missing closing bracket.",
+    span: [6, 3, 7, 13],
+  },
+  {
+    file: "multiple-value-setq.lisp",
+    message:
+      "Bracket mismatch at line 6: MULTIPLE-VALUE-SETQ was given 3 forms; it takes a list of names and one form. Check the MULTIPLE-VALUE-SETQ form for a missing closing bracket.",
+    span: [6, 3, 7, 13],
+  },
+  {
+    file: "multiple-value-bind.lisp",
+    message:
+      "Bracket mismatch at line 6: MULTIPLE-VALUE-BIND was given 1 form; it takes a list of names and the form that produces the values. Check the MULTIPLE-VALUE-BIND form for a missing closing bracket.",
+    span: [6, 3, 7, 19],
+  },
+  {
+    file: "let-binding.lisp",
+    message:
+      "Bracket mismatch at line 6: the LET binding list read a body form as a binding; each binding is a name or a (name value) pair. Check the LET form for a missing closing bracket.",
+    span: [6, 3, 7, 17],
+  },
+  {
+    file: "do-clauses.lisp",
+    message:
+      "Bracket mismatch at line 6: the DO binding list read the form below it as a binding; each DO binding is a name or (name init step). Check the DO form for a missing closing bracket.",
+    span: [6, 3, 8, 16],
+  },
+  {
+    file: "dotimes-spec.lisp",
+    message:
+      "Bracket mismatch at line 6: the DOTIMES spec read a body form as part of it; it takes (variable count [result]). Check the DOTIMES form for a missing closing bracket.",
+    span: [6, 3, 7, 16],
+  },
+  {
+    file: "dolist-spec.lisp",
+    message:
+      "Bracket mismatch at line 6: the DOLIST spec read a body form as part of it; it takes (variable list [result]). Check the DOLIST form for a missing closing bracket.",
+    span: [6, 3, 7, 16],
+  },
+  {
+    file: "defparameter.lisp",
+    message:
+      "Bracket mismatch at line 5: DEFPARAMETER was given 4 forms; it takes a name, an initial value and an optional description. Check the DEFPARAMETER form for a missing closing bracket.",
+    span: [5, 1, 7, 2],
+  },
+  {
+    file: "defvar.lisp",
+    message:
+      "Bracket mismatch at line 5: DEFVAR was given 4 forms; it takes a name with an optional initial value and description. Check the DEFVAR form for a missing closing bracket.",
+    span: [5, 1, 7, 2],
+  },
+];
+
+for (const entry of moreBracketCases) {
+  test(`marks the form a missing closer broke: ${entry.file}`, () => {
+    const [diagnostic] = analyze(bracketFixture(entry.file));
+
+    assert.equal(diagnostic?.code, "bracket-mismatch");
+    assert.equal(diagnostic?.message, entry.message);
+    assert.deepEqual(spanOf(diagnostic), [...entry.span]);
+  });
+}
+
 // The repair, not the verdict: the learner wrote (x 0) where ((x 0)) was meant,
 // and the whole form is marked because the brackets are what is wrong.
 test("says how to repair a binding list written without its inner brackets", () => {
