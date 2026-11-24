@@ -1,4 +1,5 @@
 import { analyze } from "../core/analyze";
+import { EXPLAIN_TRACE } from "../core/trace";
 import type {
   VsCodeApi,
   VsDiagnosticCollection,
@@ -136,7 +137,8 @@ export function activateExtension(
 
     const view = traceTree(document.getText());
     roots = view.kind === "tree" ? view.roots : [];
-    traceTreeView.setMessage(pinned ? `${view.message} · pinned` : view.message);
+    const summary = pinned ? `${view.message} · pinned` : view.message;
+    traceTreeView.setMessage(`${summary}\n\n${EXPLAIN_TRACE}`);
     traceTreeView.refresh();
   };
 

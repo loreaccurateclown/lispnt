@@ -138,9 +138,12 @@ function adapter(): VsCodeApi {
     },
     showDocument: async (uri) => {
       const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
+      // preview: false keeps the trace in a normal tab. A preview tab is
+      // replaced whenever a file is clicked in the explorer, which would make the
+      // output view a place where source files open.
       await vscode.window.showTextDocument(document, {
         viewColumn: vscode.ViewColumn.Beside,
-        preview: true,
+        preview: false,
       });
     },
     get activeTextDocument(): VsTextDocument | undefined {

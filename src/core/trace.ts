@@ -28,10 +28,13 @@ export interface TraceResult {
   readonly finalValue?: string;
 }
 
-// The explanation appended by renderTrace when asked for it.
+// The explanation appended by renderTrace when asked for it. It is broken into
+// short lines because the generated document is often opened in a narrow editor
+// column and word wrap is usually off.
 export const EXPLAIN_TRACE =
-  "This is a summary, not a full trace. The final value is on the top line: " +
-  "the function recurses down to max depth, then the values are combined back up. " +
+  "This is a summary, not a full trace.\n" +
+  "The final value is on the top line: the function recurses down to max depth,\n" +
+  "then the values are combined back up.\n" +
   "If using tail-call recursion, nothing is combined — the answer returns unchanged.";
 
 export const DEFAULT_TRACE_LIMIT = 10;

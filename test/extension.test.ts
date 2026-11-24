@@ -673,3 +673,14 @@ test("the trace command falls back to the traced file when focus is elsewhere", 
   assert.ok(provide !== undefined);
   assert.match(provide("lispnt-trace:/Trace"), /root: 0: FACT\(3\) => 6/);
 });
+
+test("the tree carries the trace explanation under its summary", () => {
+  const active = documentOf("a.lisp", `${FACT}\n;;[trace] (fact 3)`);
+  const fake = fakeApi({ active });
+  activate(fake);
+
+  const message = fake.trees[0]?.message ?? "";
+  assert.match(message, /final value: 6/);
+  assert.match(message, /This is a summary, not a full trace\./);
+  assert.match(message, /tail-call recursion/);
+});

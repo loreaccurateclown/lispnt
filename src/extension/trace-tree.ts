@@ -23,7 +23,7 @@ export type TraceView =
     };
 
 export const NO_MARKERS_MESSAGE =
-  "No ;;[trace] calls in this file. Write one above a definition, for example ;;[trace] (fact 4).";
+  "No ;;[trace] calls in this file. Write ;; [trace] (test call) above a function definition, for example ;;[trace] (fact 4).";
 
 export function traceTree(source: string): TraceView {
   const cases = traceCases(source);
