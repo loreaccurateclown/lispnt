@@ -3,13 +3,45 @@
   "version": "0.0.1",
   "private": true,
   "description": "Lispnt - a gentle, read-only diagnostic path for Common Lisp (SBCL), alongside OLIVE.",
+  "main": "./dist/src/extension.js",
+  "engines": {
+    "vscode": "^1.147.0"
+  },
+  "activationEvents": [
+    "onLanguage:lisp",
+    "workspaceContains:**/*.lisp"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "lispnt.checkFile",
+        "title": "Lispnt: Check File"
+      }
+    ],
+    "configuration": {
+      "title": "Lispnt",
+      "properties": {
+        "lispnt.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check Lisp files and report mistakes in the Problems panel."
+        },
+        "lispnt.debounceMs": {
+          "type": "number",
+          "default": 300,
+          "description": "How long to wait after an edit before checking the file again."
+        }
+      }
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node dist/test/reader.test.js && node dist/test/analyze.test.js && node dist/test/interpreter.test.js && node dist/test/print.test.js && node dist/test/pipeline.test.js && node dist/test/bindings.test.js && node dist/test/scopes.test.js && node dist/test/name-checks.test.js && node dist/test/hints.test.js && node dist/test/trace.test.js && node dist/test/trace-cases.test.js"
+    "test": "npm run build && node dist/test/reader.test.js && node dist/test/analyze.test.js && node dist/test/interpreter.test.js && node dist/test/print.test.js && node dist/test/pipeline.test.js && node dist/test/bindings.test.js && node dist/test/scopes.test.js && node dist/test/name-checks.test.js && node dist/test/hints.test.js && node dist/test/trace.test.js && node dist/test/trace-cases.test.js && node dist/test/extension.test.js"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@types/vscode": "1.146.0",
     "typescript": "7.0.2"
   }
 }

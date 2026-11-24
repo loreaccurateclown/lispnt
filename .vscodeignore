@@ -1,0 +1,10 @@
+src/**
+test/**
+dist/test/**
+node_modules/**
+.npm-cache/**
+.vscode/**
+*.map
+*.ts
+tsconfig.json
+package-lock.json
