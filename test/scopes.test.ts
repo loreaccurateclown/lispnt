@@ -74,7 +74,7 @@ test("resolves a builtin by name", () => {
 });
 
 test("resolves a standard name we do not implement", () => {
-  assert.equal(lookupFunction(rootScope(""), "LOOP")?.kind, "standard");
+  assert.equal(lookupFunction(rootScope(""), "HANDLER-CASE")?.kind, "standard");
 });
 
 test("shows parameters in the body and not outside it", () => {

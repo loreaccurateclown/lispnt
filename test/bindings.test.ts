@@ -123,7 +123,9 @@ test("refuses the fallback once the snapshot limit was reached", () => {
 });
 
 test("skips an unimplemented form and keeps going", () => {
-  const source = "(loop) (defparameter x 5)";
+  // (loop) used to stand here, as a form the evaluator skipped. LOOP is
+  // evaluated now, so the example is a standard form that is still our gap.
+  const source = "(prog (i) 1) (defparameter x 5)";
   const result = bindingsAt(source, source.length);
 
   assert.equal(result.unavailable, undefined);

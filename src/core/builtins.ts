@@ -162,8 +162,8 @@ register("-", 1, null, (args) => {
   };
 });
 
-register("CAR", 1, 1, (args) => expectCons(args[0]!).car);
-register("CDR", 1, 1, (args) => expectCons(args[0]!).cdr);
+register("CAR", 1, 1, (args) => carOf(args[0]!));
+register("CDR", 1, 1, (args) => cdrOf(args[0]!));
 register("CONS", 2, 2, (args) => cons(args[0]!, args[1]!));
 register("LIST", 0, null, (args) => listFrom(args));
 register("LENGTH", 1, 1, (args) => {
@@ -270,17 +270,22 @@ register("/=", 1, null, (args) => {
 register("REVERSE", 1, 1, (args) => listFrom(consForm(args[0]!).reverse()));
 register("NREVERSE", 1, 1, (args) => listFrom(consForm(args[0]!).reverse())); //we do Not mutate the list here unlike CL
 
+// CL: the car and cdr of NIL are NIL; any other non-list is a type error.
+// A tolerant reader lets learners walk a list without guarding every step.
+function carOf(value: LispValue): LispValue {
+  return isNil(value) ? NIL : expectCons(value).car;
+}
+
+function cdrOf(value: LispValue): LispValue {
+  return isNil(value) ? NIL : expectCons(value).cdr;
+}
+
 //LLM-written registrations
-register("FIRST", 1, 1, (args) => expectCons(args[0]!).car);
-register("SECOND", 1, 1, (args) => expectCons(expectCons(args[0]!).cdr).car);
-register("REST", 1, 1, (args) => expectCons(args[0]!).cdr);
-register("CADR", 1, 1, (args) => expectCons(expectCons(args[0]!).cdr).car);
-register(
-  "CADDR",
-  1,
-  1,
-  (args) => expectCons(expectCons(expectCons(args[0]!).cdr).cdr).car,
-);
+register("FIRST", 1, 1, (args) => carOf(args[0]!));
+register("SECOND", 1, 1, (args) => carOf(cdrOf(args[0]!)));
+register("REST", 1, 1, (args) => cdrOf(args[0]!));
+register("CADR", 1, 1, (args) => carOf(cdrOf(args[0]!)));
+register("CADDR", 1, 1, (args) => carOf(cdrOf(cdrOf(args[0]!))));
 register("EQL", 2, 2, (args) => (isEq(args[0]!, args[1]!) ? intern("T") : NIL));
 
 register("NULL", 1, 1, (args) => (isNil(args[0]!) ? intern("T") : NIL));

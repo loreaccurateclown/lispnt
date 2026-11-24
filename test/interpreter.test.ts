@@ -833,7 +833,11 @@ test("dispatches every name it lists as a special form", () => {
     let code: string | undefined;
 
     try {
-      evaluate(parse(`(${name})`), createEnv(null));
+      // (LOOP) does not terminate, and the point here is dispatch, not
+      // termination — so every name runs under a small ceiling.
+      withStepCeiling(1_000, () =>
+        evaluate(parse(`(${name})`), createEnv(null)),
+      );
     } catch (error) {
       if (error instanceof ReturnSignal) continue;
       if (error instanceof LispEvalError) code = error.code;
@@ -1222,3 +1226,263 @@ test("lists defstruct as a special form", () => {
 
 
 
+
+
+//LLM-written tests for LOOP
+test("collects over a list", () => {
+  assert.equal(printValueOf("(loop for x in '(1 2 3) collect x)"), "(1 2 3)");
+});
+
+test("sums, counts, maximizes and minimizes", () => {
+  assert.deepEqual(evalIn("(loop for x in '(1 2 3) sum x)"), num(6));
+  assert.deepEqual(evalIn("(loop for x in '(1 2 3) count x)"), num(3));
+  assert.deepEqual(evalIn("(loop for x in '(1 5 3) maximize x)"), num(5));
+  assert.deepEqual(evalIn("(loop for x in '(1 5 3) minimize x)"), num(1));
+});
+
+test("returns NIL from maximize over nothing", () => {
+  assert.deepEqual(evalIn("(loop for x in '() maximize x)"), NIL);
+});
+
+test("appends lists in order", () => {
+  assert.equal(
+    printValueOf("(loop for x in '(1 2 3) append (list x x))"),
+    "(1 1 2 2 3 3)",
+  );
+});
+
+test("counts ranges with from, to, below, above and by", () => {
+  assert.equal(printValueOf("(loop for i from 0 below 3 collect i)"), "(0 1 2)");
+  assert.equal(printValueOf("(loop for i from 10 to 12 collect i)"), "(10 11 12)");
+  assert.equal(printValueOf("(loop for i from 0 below 10 by 3 collect i)"), "(0 3 6 9)");
+  assert.equal(printValueOf("(loop for i from 3 above 0 by -1 collect i)"), "(3 2 1 0)");
+  assert.equal(printValueOf("(loop for i below 3 collect i)"), "(0 1 2)");
+});
+
+test("walks tails with on", () => {
+  assert.equal(printValueOf("(loop for x on '(1 2) collect x)"), "((1 2) (2))");
+});
+
+test("walks a vector and a string with across", () => {
+  assert.equal(printValueOf("(loop for x across #(4 5) collect x)"), "(4 5)");
+  assert.equal(printValueOf('(loop for c across "ab" collect c)'), "(#\\a #\\b)");
+});
+
+test("steps a driver with a function supplied to by", () => {
+  assert.equal(
+    printValueOf("(loop for x in '(1 2 3) by (lambda (l) nil) collect x)"),
+    "(1)",
+  );
+});
+
+test("stops on while and until", () => {
+  assert.equal(
+    printValueOf("(loop for i from 0 below 5 while (< i 3) collect i)"),
+    "(0 1 2)",
+  );
+  assert.equal(
+    printValueOf("(loop for x in '(1 2 3) until (= x 2) collect x)"),
+    "(1)",
+  );
+});
+
+test("runs a body a fixed number of times with repeat", () => {
+  assert.deepEqual(evalIn("(loop repeat 3 sum 2)"), num(6));
+});
+
+test("runs do forms and returns the loop's NIL", () => {
+  assert.deepEqual(
+    evalIn("(let ((n 0)) (loop for i from 0 below 3 do (setf n (+ n i)) finally (return n)))"),
+    num(3),
+  );
+});
+
+test("runs initially once and finally at the end", () => {
+  assert.equal(
+    printValueOf(
+      "(let ((seen '())) (loop repeat 2 initially (push 'start seen) do (push 'body seen) finally (return (reverse seen))))",
+    ),
+    "(START BODY BODY)",
+  );
+});
+
+test("leaves the loop on return and skips finally", () => {
+  assert.deepEqual(
+    evalIn("(loop for i from 0 below 3 do (if (= i 1) (return i)) finally (return 'no))"),
+    num(1),
+  );
+});
+
+test("keeps an into accumulator for finally", () => {
+  assert.deepEqual(
+    evalIn("(loop for i from 0 below 3 sum i into total finally (return (* total 2)))"),
+    num(6),
+  );
+  assert.deepEqual(
+    evalIn("(loop for i from 0 below 3 count t into n finally (return n))"),
+    num(3),
+  );
+});
+
+test("filters with when and unless", () => {
+  assert.equal(
+    printValueOf("(loop for x in '(1 2 3 4) when (evenp x) collect x)"),
+    "(2 4)",
+  );
+  assert.equal(
+    printValueOf("(loop for x in '(1 2 3 4) unless (evenp x) collect x)"),
+    "(1 3)",
+  );
+});
+
+test("pairs then and else around end", () => {
+  assert.equal(
+    printValueOf(
+      "(loop for x in '(1 2 3) if (oddp x) collect x else collect (* x 10) end collect 'tail)",
+    ),
+    "(1 TAIL 20 TAIL 3 TAIL)",
+  );
+});
+
+test("shares one implicit list between two collect clauses", () => {
+  assert.equal(printValueOf("(loop for x in '(1 2) collect x collect x)"), "(1 1 2 2)");
+});
+
+test("refuses two different implicit accumulation kinds", () => {
+  assert.throws(
+    () => evalIn("(loop for x in '(1 2) if (oddp x) collect x else sum x)"),
+    (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "malformed-form";
+    },
+  );
+});
+
+test("runs the simple form until a return", () => {
+  assert.deepEqual(evalIn("(loop (+ 1 2) (return 5))"), num(5));
+});
+
+test("stops a simple loop that never returns at the budget", () => {
+  assert.throws(
+    () => withStepCeiling(1000, () => evalIn("(loop (+ 1 2))")),
+    (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "evaluation-budget";
+    },
+  );
+});
+
+test("fails loudly on a clause it does not model", () => {
+  for (const source of [
+    "(loop named out for x in '(1) collect x)",
+    "(loop for x in '(1) with y = 1 collect y)",
+    "(loop for x in '(1) thereis x)",
+    "(loop for x in '(1) nconc (list x))",
+    "(loop for x in '(1) always x)",
+  ]) {
+    assert.throws(() => evalIn(source), (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "unsupported-standard";
+    }, source);
+  }
+});
+
+test("rejects a malformed driver", () => {
+  for (const source of ["(loop for)", "(loop for 5 in '(1) collect 5)"]) {
+    assert.throws(() => evalIn(source), (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "malformed-form";
+    }, source);
+  }
+});
+
+test("lists loop as a special form", () => {
+  assert.ok(SPECIAL_FORMS.has("LOOP"));
+});
+
+
+
+test("stops a bare simple loop at the budget", () => {
+  assert.throws(
+    () => withStepCeiling(1000, () => evalIn("(loop)")),
+    (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "evaluation-budget";
+    },
+  );
+});
+
+test("stops an unbounded driver with no body at the budget", () => {
+  assert.throws(
+    () => withStepCeiling(1000, () => evalIn("(loop for i from 0)")),
+    (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "evaluation-budget";
+    },
+  );
+});
+
+test("rejects a driver inside a conditional clause", () => {
+  // SBCL: "FOR does not introduce a LOOP clause that can follow WHEN".
+  assert.throws(
+    () => evalIn("(loop for x in '(1 2) when t for y in '(3 4) collect y)"),
+    (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "malformed-form";
+    },
+  );
+});
+
+test("steps two top-level drivers in parallel", () => {
+  assert.equal(
+    printValueOf("(loop for x in '(1 2) for y in '(3 4) collect (list x y))"),
+    "((1 3) (2 4))",
+  );
+});
+
+test("a budget error outside a pass does not disable later evaluation", () => {
+  // The counter is module-level. Before it was scoped to the outermost
+  // evaluation, this throw left it above the ceiling and every later
+  // evaluate() in the process failed.
+  assert.throws(
+    () => evalIn("(dotimes (i 100000000) 1)"),
+    (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "evaluation-budget";
+    },
+  );
+
+  assert.deepEqual(evalIn("(+ 1 2)"), num(3));
+});
+
+test("returns NIL from car and cdr of NIL", () => {
+  assert.deepEqual(evalIn("(car nil)"), NIL);
+  assert.deepEqual(evalIn("(cdr nil)"), NIL);
+  assert.deepEqual(evalIn("(first nil)"), NIL);
+  assert.deepEqual(evalIn("(rest nil)"), NIL);
+  assert.deepEqual(evalIn("(second '(1))"), NIL);
+  assert.deepEqual(evalIn("(cadr '(1))"), NIL);
+  assert.deepEqual(evalIn("(caddr '(1 2))"), NIL);
+});
+
+test("still rejects car of something that is not a list", () => {
+  assert.throws(() => evalIn("(car 1)"), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "type-error";
+  });
+});
+
+test("requires compound forms after do and initially", () => {
+  for (const source of ["(loop do 1)", "(loop initially 1)", "(loop finally 1)"]) {
+    assert.throws(() => evalIn(source), (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "malformed-form";
+    }, source);
+  }
+});
+
+test("requires a driver before the loop body", () => {
+  assert.throws(
+    () => evalIn("(loop do (return 1) for x in '(1 2) collect x)"),
+    (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "malformed-form";
+    },
+  );
+});
+
+test("allows a driver after initially", () => {
+  assert.equal(
+    printValueOf("(loop initially (setf z 1) for x in '(1 2) collect x)"),
+    "(1 2)",
+  );
+});

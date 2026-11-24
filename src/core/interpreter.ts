@@ -17,12 +17,18 @@ import {
   applyBuiltIn,
   builtins,
   consForm,
+  expectCons,
   expectNumber,
   isEq,
   register,
   structTypeNames,
 } from "./builtins";
 import { LispEvalError } from "./errors";
+import {
+  parseLoop,
+  type LoopClause,
+  type LoopDriver,
+} from "./loop";
 import { printValue } from "./print";
 import { STANDARD_SYMBOLS } from "./standard-symbols";
 
@@ -126,6 +132,7 @@ export const SPECIAL_FORMS: ReadonlySet<string> = new Set([
   "CASE",
   "ECASE",
   "CCASE",
+  "LOOP",
   "DEFPARAMETER",
   "DEFVAR",
   "DEFSTRUCT",
@@ -133,14 +140,28 @@ export const SPECIAL_FORMS: ReadonlySet<string> = new Set([
   "QUOTE",
 ]);
 
-export function evaluate(node: AstNode, env: Env  ): LispValue {
-  const observer = currentObserver;
-  if (observer === null) return evaluateInner(node, env);
+// How deeply the evaluator is nested in this thread of execution. A budget
+// error thrown outside a pass used to leave the shared counter above the
+// ceiling, which disabled every later evaluation in the process; the counter is
+// now scoped to the outermost evaluation when no pass is open.
+let evaluationDepth = 0;
 
-  observer.onEnterForm?.(node, env);
-  const value = evaluateInner(node, env );
-  observer.onLeaveForm?.(node, env, value );
-  return value;
+export function evaluate(node: AstNode, env: Env  ): LispValue {
+  const outermost = evaluationDepth === 0;
+  if (outermost && !stepCeilingOpen) steps = 0;
+  evaluationDepth += 1;
+
+  try {
+    const observer = currentObserver;
+    if (observer === null) return evaluateInner(node, env);
+
+    observer.onEnterForm?.(node, env);
+    const value = evaluateInner(node, env );
+    observer.onLeaveForm?.(node, env, value );
+    return value;
+  } finally {
+    evaluationDepth -= 1;
+  }
 }
 
 export function applyFunction(fn: FunctionValue, args: LispValue[]): LispValue {
@@ -185,7 +206,10 @@ export function visibleBindings(env: Env  ): Map<string, LispValue> {
   return visible;
 }
 
-function evaluateInner(node: AstNode, env: Env): LispValue {
+// One unit of the evaluation budget. LOOP calls this once per iteration as
+// well, so a loop whose body evaluates nothing — (loop), or a driver with no
+// body — still stops at the ceiling instead of running forever.
+function spendStep(): void {
   steps += 1;
   if (steps > stepCeiling)
     throw new LispEvalError(
@@ -193,6 +217,10 @@ function evaluateInner(node: AstNode, env: Env): LispValue {
       null,
       "evaluation took too many steps",
     );
+}
+
+function evaluateInner(node: AstNode, env: Env): LispValue {
+  spendStep();
   if (node.kind === "quote" && node.quoteKind === "#'") {
     // #'f is the function value of f; #'(lambda ...) evaluates to a function.
     if (node.target.kind === "atom") return functionByName(node.target, env);
@@ -283,6 +311,8 @@ function evaluateInner(node: AstNode, env: Env): LispValue {
         return evalCase(node, env, true);
       case "CCASE":
         return evalCase(node, env, true);
+      case "LOOP":
+        return evalLoop(node, env);
       case "RETURN":
         return evalReturn(node, env);
       case "PUSH":
@@ -1034,6 +1064,417 @@ function evalLocalFunctions(
   return evaluateBody(form.children.slice(2), scope); // slice(2): drop the form head and the definitions
 }
 
+// LOOP — the clauses are parsed in loop.ts, which owns the grammar and reports
+// any clause word it does not model as unsupported-standard. Execution lives
+// here because it needs the evaluator and the call path.
+//
+// The subset is deliberate: drivers in/on/across and numeric from/to/below/by,
+// while/until/repeat, do/collect/append/sum/count/maximize/minimize with into,
+// initially/finally/return, and if/when/unless with else and end.
+export function evalLoop(form: ListNode, env: Env): LispValue {
+  const clauses = parseLoop(form);
+  const first = clauses[0];
+
+  if (clauses.length === 1 && first !== undefined && first.kind === "simple") {
+    for (;;) {
+      spendStep();
+      try {
+        evaluateBody(first.forms, env);
+      } catch (error) {
+        if (error instanceof ReturnSignal) return error.value;
+        throw error;
+      }
+    }
+  }
+
+  const scope = createEnv(env);
+  const drivers = collectClauses(clauses, (clause) => clause.kind === "driver").map(
+    (clause) => (clause as Extract<LoopClause, { kind: "driver" }>).driver,
+  );
+  const terminations = collectClauses(
+    clauses,
+    (clause) => clause.kind === "termination",
+  ) as Array<Extract<LoopClause, { kind: "termination" }>>;
+  const accumulation = collectAccumulators(clauses);
+
+  const repeated = terminations.find((clause) => clause.test === "repeat");
+  const repeatCount =
+    repeated === undefined ? undefined : expectNumber(evaluate(repeated.form, env));
+
+  const states = drivers.map((driver) => startDriver(driver, env, scope));
+
+  // Loop accumulators with an INTO name are visible to the body and to finally.
+  for (const accumulator of accumulation.all) {
+    if (accumulator.into !== undefined)
+      define(scope, accumulator.into, accumulatorValue(accumulator));
+  }
+
+  for (const clause of collectClauses(clauses, (c) => c.kind === "initially"))
+    for (const initial of (clause as Extract<LoopClause, { kind: "initially" }>).forms)
+      evaluate(initial, scope);
+
+  let iterations = 0;
+  let returned: LispValue | undefined;
+
+  try {
+    for (;;) {
+      spendStep();
+      if (repeatCount !== undefined && iterations >= repeatCount) break;
+      if (states.some((state) => state.done)) break;
+
+      // Drivers are bound before the termination tests, so a WHILE may read a
+      // driver variable on the first iteration, as in CL.
+      bindDrivers(states, scope);
+      if (!terminationAllows(terminations, scope)) break;
+
+      for (const clause of clauses) runClause(clause, scope, accumulation);
+      stepDrivers(states);
+      iterations += 1;
+    }
+
+    for (const clause of collectClauses(clauses, (c) => c.kind === "finally"))
+      for (const final of (clause as Extract<LoopClause, { kind: "finally" }>).forms)
+        evaluate(final, scope);
+  } catch (error) {
+    if (error instanceof ReturnSignal) returned = error.value;
+    else throw error;
+  }
+
+  if (returned !== undefined) return returned;
+
+  // CL allows one kind of implicit accumulation per loop; two kinds cannot
+  // share the loop's value, which SBCL reports at macroexpansion.
+  if (accumulation.implicit.size > 1)
+    throw new LispEvalError(
+      "malformed-form",
+      form.start,
+      "loop: incompatible kinds of accumulation leave the loop's value",
+    );
+  const only = [...accumulation.implicit.values()][0];
+  return only === undefined ? NIL : accumulatorValue(only);
+}
+
+type DriverState =
+  | {
+      readonly kind: "in" | "on";
+      readonly name: string;
+      readonly by: LispValue | undefined;
+      current: LispValue;
+      done: boolean;
+    }
+  | {
+      readonly kind: "across";
+      readonly name: string;
+      readonly elements: LispValue[];
+      index: number;
+      done: boolean;
+    }
+  | {
+      readonly kind: "range";
+      readonly name: string;
+      current: number;
+      readonly bound: { readonly op: "to" | "below" | "above"; readonly value: number } | undefined;
+      readonly by: number;
+      done: boolean;
+    };
+
+function startDriver(driver: LoopDriver, env: Env, _scope: Env): DriverState {
+  if (driver.kind === "range") {
+    const current = driver.from === undefined ? 0 : expectNumber(evaluate(driver.from, env));
+    const bound =
+      driver.bound === undefined
+        ? undefined
+        : {
+            op: driver.bound.op,
+            value: expectNumber(evaluate(driver.bound.node, env)),
+          };
+    const by = driver.by === undefined ? 1 : expectNumber(evaluate(driver.by, env));
+    const state: DriverState = {
+      kind: "range",
+      name: driver.name,
+      current,
+      bound,
+      by,
+      done: false,
+    };
+    state.done = rangeDone(state);
+    return state;
+  }
+
+  const source = evaluate(driver.source, env);
+  if (driver.how === "across") {
+    // ACROSS walks any vector; a string is a vector of characters.
+    const elements =
+      source.kind === "array"
+        ? source.elements
+        : source.kind === "string"
+          ? [...source.value].map<LispValue>((character) => ({
+              kind: "char",
+              value: character,
+            }))
+          : undefined;
+    if (elements === undefined)
+      throw new LispEvalError(
+        "type-error",
+        null,
+        `loop: ACROSS needs a vector or a string, got ${source.kind}`,
+      );
+    return {
+      kind: "across",
+      name: driver.name,
+      elements,
+      index: 0,
+      done: elements.length === 0,
+    };
+  }
+
+  if (driver.how === "in" && source.kind !== "cons" && !isNil(source))
+    throw new LispEvalError(
+      "type-error",
+      null,
+      `loop: IN needs a list, got ${source.kind}`,
+    );
+
+  return {
+    kind: driver.how,
+    name: driver.name,
+    by: driver.by === undefined ? undefined : evaluate(driver.by, env),
+    current: source,
+    done: isNil(source),
+  };
+}
+
+function rangeDone(state: Extract<DriverState, { kind: "range" }>): boolean {
+  if (state.bound === undefined) return false;
+  if (state.bound.op === "to") return state.current > state.bound.value;
+  if (state.bound.op === "below") return state.current >= state.bound.value;
+  return state.current < state.bound.value;
+}
+
+function bindDrivers(states: DriverState[], scope: Env): void {
+  for (const state of states) {
+    if (state.kind === "across") {
+      define(scope, state.name, state.elements[state.index] ?? NIL);
+    } else if (state.kind === "range") {
+      define(scope, state.name, { kind: "number", value: state.current });
+    } else if (state.kind === "in") {
+      define(scope, state.name, expectCons(state.current).car);
+    } else {
+      // ON binds the successive tails themselves, not their first elements.
+      define(scope, state.name, state.current);
+    }
+  }
+}
+
+function stepDrivers(states: DriverState[]): void {
+  for (const state of states) {
+    if (state.kind === "across") {
+      state.index += 1;
+      state.done = state.index >= state.elements.length;
+    } else if (state.kind === "range") {
+      state.current += state.by;
+      state.done = rangeDone(state);
+    } else {
+      const next =
+        state.by === undefined
+          ? expectCons(state.current).cdr
+          : callValue(state.by, [state.current]);
+      state.current = next;
+      state.done = !isTruthy(next) || next.kind !== "cons";
+    }
+  }
+}
+
+function terminationAllows(
+  terminations: Array<Extract<LoopClause, { kind: "termination" }>>,
+  scope: Env,
+): boolean {
+  for (const clause of terminations) {
+    if (clause.test === "repeat") continue;
+    const truthy = isTruthy(evaluate(clause.form, scope));
+    if (clause.test === "while" && !truthy) return false;
+    if (clause.test === "until" && truthy) return false;
+  }
+  return true;
+}
+
+interface AccumulatorState {
+  readonly kind: AccumulatorKind;
+  readonly form: AstNode;
+  readonly into: string | undefined;
+  list: LispValue[];
+  total: number;
+  best: number | undefined;
+}
+
+type AccumulatorKind =
+  | "collect"
+  | "append"
+  | "sum"
+  | "count"
+  | "maximize"
+  | "minimize";
+
+interface Accumulators {
+  // Every accumulation clause, for INTO bindings and for evaluation.
+  readonly all: AccumulatorState[];
+  // The clause's own expression identifies its accumulator.
+  readonly byForm: Map<AstNode, AccumulatorState>;
+  // Implicit accumulators share one value per kind: two COLLECT clauses in one
+  // loop append to the same list, as in CL. Two different kinds are an error.
+  readonly implicit: Map<AccumulatorKind, AccumulatorState>;
+}
+
+function collectAccumulators(clauses: LoopClause[]): Accumulators {
+  const all: AccumulatorState[] = [];
+  const byForm = new Map<AstNode, AccumulatorState>();
+  const implicit = new Map<AccumulatorKind, AccumulatorState>();
+
+  const create = (
+    kind: AccumulatorKind,
+    form: AstNode,
+    into: string | undefined,
+  ): AccumulatorState => {
+    const state: AccumulatorState = {
+      kind,
+      form,
+      into,
+      list: [],
+      total: 0,
+      best: undefined,
+    };
+    all.push(state);
+    return state;
+  };
+
+  const walk = (list: LoopClause[]): void => {
+    for (const clause of list) {
+      if (clause.kind === "main") {
+        const main = clause.main;
+        if (
+          main.kind === "collect" ||
+          main.kind === "append" ||
+          main.kind === "sum" ||
+          main.kind === "count" ||
+          main.kind === "maximize" ||
+          main.kind === "minimize"
+        ) {
+          if (main.into !== undefined) {
+            byForm.set(main.form, create(main.kind, main.form, main.into));
+            continue;
+          }
+          const shared = implicit.get(main.kind);
+          byForm.set(
+            main.form,
+            shared ?? create(main.kind, main.form, undefined),
+          );
+          if (shared === undefined)
+            implicit.set(main.kind, byForm.get(main.form)!);
+        }
+      } else if (clause.kind === "conditional") {
+        walk(clause.then);
+        walk(clause.otherwise);
+      }
+    }
+  };
+
+  walk(clauses);
+  return { all, byForm, implicit };
+}
+
+function accumulatorValue(accumulator: AccumulatorState): LispValue {
+  if (accumulator.kind === "collect" || accumulator.kind === "append")
+    return listToValue(accumulator.list);
+  if (accumulator.kind === "sum" || accumulator.kind === "count")
+    return { kind: "number", value: accumulator.total };
+  if (accumulator.kind === "maximize" || accumulator.kind === "minimize")
+    return accumulator.best === undefined
+      ? NIL
+      : { kind: "number", value: accumulator.best };
+  return NIL;
+}
+
+// The clause's own form is evaluated, not the accumulator's: clauses that share
+// an implicit accumulator each have their own expression.
+function accumulate(
+  accumulator: AccumulatorState,
+  form: AstNode,
+  scope: Env,
+): void {
+  const value = evaluate(form, scope);
+
+  switch (accumulator.kind) {
+    case "collect":
+      accumulator.list.push(value);
+      break;
+    case "append":
+      accumulator.list.push(...consForm(value));
+      break;
+    case "sum":
+      accumulator.total += expectNumber(value);
+      break;
+    case "count":
+      if (isTruthy(value)) accumulator.total += 1;
+      break;
+    case "maximize": {
+      const number = expectNumber(value);
+      if (accumulator.best === undefined || number > accumulator.best)
+        accumulator.best = number;
+      break;
+    }
+    case "minimize": {
+      const number = expectNumber(value);
+      if (accumulator.best === undefined || number < accumulator.best)
+        accumulator.best = number;
+      break;
+    }
+  }
+
+  if (accumulator.into !== undefined)
+    define(scope, accumulator.into, accumulatorValue(accumulator));
+}
+
+function runClause(
+  clause: LoopClause,
+  scope: Env,
+  accumulation: Accumulators,
+): void {
+  if (clause.kind === "main") {
+    const main = clause.main;
+    if (main.kind === "do") {
+      for (const form of main.forms) evaluate(form, scope);
+      return;
+    }
+    if (main.kind === "return") throw new ReturnSignal(evaluate(main.form, scope));
+
+    const accumulator = accumulation.byForm.get(main.form);
+    if (accumulator !== undefined) accumulate(accumulator, main.form, scope);
+    return;
+  }
+
+  if (clause.kind !== "conditional") return;
+
+  const truthy = isTruthy(evaluate(clause.form, scope));
+  const runsThen = clause.test === "unless" ? !truthy : truthy;
+  const body = runsThen ? clause.then : clause.otherwise;
+
+  for (const inner of body) runClause(inner, scope, accumulation);
+}
+
+function collectClauses(
+  clauses: LoopClause[],
+  match: (clause: LoopClause) => boolean,
+): LoopClause[] {
+  return clauses.filter(match);
+}
+
+function listToValue(items: LispValue[]): LispValue {
+  let result: LispValue = NIL;
+  for (let index = items.length - 1; index >= 0; index -= 1)
+    result = cons(items[index]!, result);
+  return result;
+}
+
 function evalDefParameter(form: ListNode, env: Env): LispValue {
   const nameNode = form.children[1];
 
@@ -1382,3 +1823,5 @@ export function astToValue(node: AstNode): LispValue {
     seed,
   );
 }
+
+

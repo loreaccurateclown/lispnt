@@ -22,7 +22,7 @@ export const STANDARD_SYMBOLS: ReadonlySet<string> = new Set([
   "POSITION-IF", "MAKE-SEQUENCE", "COERCE", "CONCATENATE",
 
   // iteration and control macros we do not implement
-  "LOOP", "PROG", "PROG*", "TAGBODY", "GO", "BLOCK", "RETURN-FROM",
+  "PROG", "PROG*", "TAGBODY", "GO", "BLOCK", "RETURN-FROM",
   "CATCH", "THROW", "UNWIND-PROTECT", "HANDLER-CASE", "HANDLER-BIND", "IGNORE-ERRORS",
   "TYPECASE", "ETYPECASE", "COND-IF", "MACROLET",
   "SYMBOL-MACROLET", "MULTIPLE-VALUE-BIND", "MULTIPLE-VALUE-CALL", "MULTIPLE-VALUE-PROG1",
@@ -60,3 +60,4 @@ export const STANDARD_SYMBOLS: ReadonlySet<string> = new Set([
   // misc
   "WARN", "ABORT", "ASSERT", "CHECK-TYPE", "SLEEP", "GC", "SAVE-LISP-AND-DIE",
 ]);
+
