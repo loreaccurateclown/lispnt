@@ -30,6 +30,14 @@ export type StructValue = {
   type: string;
   slots: Map<string, LispValue>;
 };
+// A hash table. Keys are kept by a canonical form chosen by `test`, so the
+// table can find a key again without hashing an arbitrary object.
+export type HashTest = "eq" | "eql" | "equal" | "equalp";
+export type HashTableValue = {
+  kind: "hash";
+  test: HashTest;
+  entries: Map<string, { key: LispValue; value: LispValue }>;
+};
 export type LispValue =
   | SymbolValue
   | NumberValue
@@ -39,6 +47,7 @@ export type LispValue =
   | ConsValue
   | ArrayValue
   | StructValue
+  | HashTableValue
   | FunctionValue
   | BuiltInValue;
 

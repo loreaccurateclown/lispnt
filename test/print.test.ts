@@ -288,3 +288,13 @@ test("cuts a structure at the depth limit", () => {
   assert.equal(printValue(wrapped, { maxDepth: 2 }), "#S(A :NEXT #S(A :NEXT #))");
 });
 
+
+test("prints a hash table", () => {
+  const table: LispValue = {
+    kind: "hash",
+    test: "eql",
+    entries: new Map([["a", { key: intern("A"), value: num(1) }]]),
+  };
+
+  assert.equal(printValue(table), "#<hash-table :count 1>");
+});

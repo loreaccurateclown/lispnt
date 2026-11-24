@@ -1486,3 +1486,112 @@ test("allows a driver after initially", () => {
     "(1 2)",
   );
 });
+
+//LLM-written tests for hash tables
+test("stores and reads a hash entry", () => {
+  assert.deepEqual(
+    evalIn("(setf h (make-hash-table)) (setf (gethash 'a h) 1) (gethash 'a h)"),
+    num(1),
+  );
+});
+
+test("returns NIL or a supplied default for an absent key", () => {
+  assert.deepEqual(evalIn("(setf h (make-hash-table)) (gethash 'a h)"), NIL);
+  assert.deepEqual(
+    evalIn("(setf h (make-hash-table)) (gethash 'a h 'missing)"),
+    intern("MISSING"),
+  );
+});
+
+test("counts, removes and clears entries", () => {
+  assert.deepEqual(
+    evalIn("(setf h (make-hash-table)) (setf (gethash 'a h) 1) (setf (gethash 'b h) 2) (hash-table-count h)"),
+    num(2),
+  );
+  assert.deepEqual(
+    evalIn("(setf h (make-hash-table)) (setf (gethash 'a h) 1) (remhash 'a h) (hash-table-count h)"),
+    num(0),
+  );
+  assert.deepEqual(
+    evalIn("(setf h (make-hash-table)) (setf (gethash 'a h) 1) (clrhash h) (hash-table-count h)"),
+    num(0),
+  );
+});
+
+test("answers hash-table-p and typep", () => {
+  assert.deepEqual(evalIn("(hash-table-p (make-hash-table))"), intern("T"));
+  assert.deepEqual(evalIn("(hash-table-p 1)"), NIL);
+  assert.deepEqual(evalIn("(typep (make-hash-table) 'hash-table)"), intern("T"));
+  assert.deepEqual(evalIn("(typep 1 'hash-table)"), NIL);
+});
+
+test("compares keys structurally under equal and by identity under eq", () => {
+  const equal = [
+    "(setf h (make-hash-table :test #'equal))",
+    "(setf (gethash '(1 2) h) 'found)",
+    "(gethash (list 1 2) h)",
+  ].join(" ");
+  assert.deepEqual(evalIn(equal), intern("FOUND"));
+
+  const identity = [
+    "(setf h (make-hash-table :test #'eq))",
+    "(setf (gethash (list 1 2) h) 'found)",
+    "(gethash (list 1 2) h)",
+  ].join(" ");
+  assert.deepEqual(evalIn(identity), NIL);
+});
+
+test("matches string keys by value", () => {
+  assert.deepEqual(
+    evalIn('(setf h (make-hash-table)) (setf (gethash "k" h) 1) (gethash "k" h)'),
+    num(1),
+  );
+});
+
+test("refuses hash options and test functions it does not model", () => {
+  for (const source of [
+    "(make-hash-table :size 10)",
+    "(make-hash-table :test #'string=)",
+  ]) {
+    assert.throws(() => evalIn(source), (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "unsupported-standard";
+    }, source);
+  }
+});
+
+test("walks hash keys and values with LOOP", () => {
+  const keys = [
+    "(setf h (make-hash-table))",
+    "(setf (gethash 'a h) 1)",
+    "(setf (gethash 'b h) 2)",
+    "(loop for k being the hash-keys of h collect k)",
+  ].join(" ");
+  assert.equal(printValueOf(keys), "(A B)");
+
+  const values = [
+    "(setf h (make-hash-table))",
+    "(setf (gethash 'a h) 1)",
+    "(setf (gethash 'b h) 2)",
+    "(loop for v being the hash-values of h collect v)",
+  ].join(" ");
+  assert.equal(printValueOf(values), "(1 2)");
+});
+
+test("walks both sides of a hash entry with using", () => {
+  const source = [
+    "(setf h (make-hash-table))",
+    "(setf (gethash 'a h) 1)",
+    "(loop for k being the hash-keys of h using (hash-value v) collect (list k v))",
+  ].join(" ");
+  assert.equal(printValueOf(source), "((A 1))");
+});
+
+test("calls a function per entry with maphash", () => {
+  const source = [
+    "(setf h (make-hash-table))",
+    "(setf (gethash 'a h) 1)",
+    "(setf (gethash 'b h) 2)",
+    "(let ((total 0)) (maphash (lambda (k v) (setf total (+ total v))) h) total)",
+  ].join(" ");
+  assert.deepEqual(evalIn(source), num(3));
+});

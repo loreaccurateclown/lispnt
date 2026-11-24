@@ -23,6 +23,13 @@ export type LoopDriver =
       readonly from?: AstNode;
       readonly bound?: RangeBound;
       readonly by?: AstNode;
+    }
+  | {
+      readonly kind: "hash";
+      readonly name: string;
+      readonly of: "keys" | "values";
+      readonly table: AstNode;
+      readonly other?: { readonly kind: "key" | "value"; readonly name: string };
     };
 
 interface RangeBound {
@@ -291,6 +298,8 @@ class ClauseParser {
     if (name === undefined)
       throw malformed(nameNode, "loop: a driver needs a variable name");
 
+    if (this.peekWord() === "BEING") return this.parseHashDriver(name);
+
     const how = this.peekWord();
     if (how !== undefined && HOW.has(how)) {
       this.next();
@@ -339,6 +348,61 @@ class ClauseParser {
       this.currentPosition(),
       "loop: a driver needs `in`, `on`, `across`, `from`, `to`, `below` or `above`",
     );
+  }
+
+  // for k being the hash-keys of table [using (hash-value v)]
+  private parseHashDriver(name: string): LoopDriver {
+    this.next(); // past BEING
+    if (this.peekWord() === "THE") this.next();
+
+    const which = this.peekWord();
+    if (
+      which !== "HASH-KEYS" &&
+      which !== "HASH-KEY" &&
+      which !== "HASH-VALUES" &&
+      which !== "HASH-VALUE"
+    )
+      throw unsupported(
+        this.currentPosition(),
+        "loop: only hash-keys and hash-values can follow BEING",
+      );
+    this.next();
+    const of = which === "HASH-KEYS" || which === "HASH-KEY" ? "keys" : "values";
+
+    const ofWord = this.peekWord();
+    if (ofWord !== "OF" && ofWord !== "IN")
+      throw malformed(
+        this.currentPosition(),
+        "loop: a hash driver needs OF or IN before the table",
+      );
+    this.next();
+    const table = this.next();
+
+    let other: { kind: "key" | "value"; name: string } | undefined;
+    if (this.peekWord() === "USING") {
+      this.next();
+      const spec = this.next();
+      if (spec.kind !== "list" || spec.children[0] === undefined)
+        throw malformed(spec, "loop: USING takes (hash-value v) or (hash-key k)");
+
+      const kindWord = word(spec.children[0]);
+      const otherName =
+        spec.children[1] === undefined ? undefined : word(spec.children[1]);
+      if (otherName === undefined)
+        throw malformed(spec, "loop: USING needs a variable name");
+
+      if (kindWord === "HASH-VALUE") other = { kind: "value", name: otherName };
+      else if (kindWord === "HASH-KEY") other = { kind: "key", name: otherName };
+      else throw malformed(spec, "loop: USING takes (hash-value v) or (hash-key k)");
+    }
+
+    return {
+      kind: "hash",
+      name,
+      of,
+      table,
+      ...(other === undefined ? {} : { other }),
+    };
   }
 
   private parseBy(): AstNode | undefined {

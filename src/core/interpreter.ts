@@ -18,7 +18,9 @@ import {
   builtins,
   consForm,
   expectCons,
+  expectHashTable,
   expectNumber,
+  hashTableKey,
   isEq,
   register,
   structTypeNames,
@@ -406,6 +408,25 @@ export function resolvePlace(node: AstNode, env: Env): Place {
       const cell = expectConsPlace(node, env);
       return { get: () => cell.cdr, set: (value) => (cell.cdr = value) };
     }
+    case "GETHASH": {
+      const keyNode = node.children[1];
+      const tableNode = node.children[2];
+      if (keyNode === undefined || tableNode === undefined)
+        throw new LispEvalError(
+          "malformed-form",
+          node.start,
+          "GETHASH place needs a key and a table",
+        );
+      const key = evaluate(keyNode, env);
+      const table = expectHashTable(evaluate(tableNode, env));
+      const canonical = hashTableKey(key, table.test);
+      return {
+        get: () => table.entries.get(canonical)?.value ?? NIL,
+        set: (value: LispValue) => {
+          table.entries.set(canonical, { key, value });
+        },
+      };
+    }
     case "AREF":
     case "ELT": {
       const index = arrayAndIndex(node, env); // {elements, at}
@@ -727,6 +748,16 @@ register("APPLY", 2, null, (args) => {
   const callable = args[0]!;
   const tail = consForm(args[args.length - 1]!); //last arg must be list
   return callValue(callable, args.slice(1, -1).concat(tail));
+});
+
+// MAPHASH calls a function per entry, so it lives here with FUNCALL and APPLY
+// rather than in builtins.ts, which must not import this module.
+register("MAPHASH", 2, 2, (args) => {
+  const table = expectHashTable(args[1]!);
+  for (const entry of [...table.entries.values()]) {
+    callValue(args[0]!, [entry.key, entry.value]);
+  }
+  return NIL;
 });
 
 //helper for resolve place along with arrayAndIndex
@@ -1176,6 +1207,15 @@ type DriverState =
       readonly bound: { readonly op: "to" | "below" | "above"; readonly value: number } | undefined;
       readonly by: number;
       done: boolean;
+    }
+  | {
+      readonly kind: "hash";
+      readonly name: string;
+      readonly of: "keys" | "values";
+      readonly entries: Array<{ readonly key: LispValue; readonly value: LispValue }>;
+      readonly other?: { readonly kind: "key" | "value"; readonly name: string };
+      index: number;
+      done: boolean;
     };
 
 function startDriver(driver: LoopDriver, env: Env, _scope: Env): DriverState {
@@ -1199,6 +1239,20 @@ function startDriver(driver: LoopDriver, env: Env, _scope: Env): DriverState {
     };
     state.done = rangeDone(state);
     return state;
+  }
+
+  if (driver.kind === "hash") {
+    const table = expectHashTable(evaluate(driver.table, env));
+    const entries = [...table.entries.values()];
+    return {
+      kind: "hash",
+      name: driver.name,
+      of: driver.of,
+      entries,
+      ...(driver.other === undefined ? {} : { other: driver.other }),
+      index: 0,
+      done: entries.length === 0,
+    };
   }
 
   const source = evaluate(driver.source, env);
@@ -1257,6 +1311,15 @@ function bindDrivers(states: DriverState[], scope: Env): void {
       define(scope, state.name, state.elements[state.index] ?? NIL);
     } else if (state.kind === "range") {
       define(scope, state.name, { kind: "number", value: state.current });
+    } else if (state.kind === "hash") {
+      const entry = state.entries[state.index]!;
+      define(scope, state.name, state.of === "keys" ? entry.key : entry.value);
+      if (state.other !== undefined)
+        define(
+          scope,
+          state.other.name,
+          state.other.kind === "key" ? entry.key : entry.value,
+        );
     } else if (state.kind === "in") {
       define(scope, state.name, expectCons(state.current).car);
     } else {
@@ -1274,6 +1337,9 @@ function stepDrivers(states: DriverState[]): void {
     } else if (state.kind === "range") {
       state.current += state.by;
       state.done = rangeDone(state);
+    } else if (state.kind === "hash") {
+      state.index += 1;
+      state.done = state.index >= state.entries.length;
     } else {
       const next =
         state.by === undefined
@@ -1823,5 +1889,6 @@ export function astToValue(node: AstNode): LispValue {
     seed,
   );
 }
+
 
 

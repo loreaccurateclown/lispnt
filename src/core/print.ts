@@ -47,6 +47,8 @@ function render(value: LispValue, depth: number, state: PrintState): string {
       if (value.kind === "cons") return renderCons(value, depth, state);
       if (value.kind === "array") return renderArray(value, depth, state);
       return renderStruct(value, depth, state);
+    case "hash":
+      return `#<hash-table :count ${value.entries.size}>`;
   }
 }
 

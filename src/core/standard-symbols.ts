@@ -54,10 +54,11 @@ export const STANDARD_SYMBOLS: ReadonlySet<string> = new Set([
   "VECTOR-PUSH", "VECTOR-PUSH-EXTEND", "VECTOR-POP", "ADJUST-ARRAY",
 
   // hash tables
-  "GETHASH", "SETHASH", "REMHASH", "CLRHASH", "HASH-TABLE-COUNT", "MAKE-HASH-TABLE",
-  "MAPHASH", "HASH-TABLE-P", "GETF", "REMF", "SYMBOL-PLIST",
+  "SETHASH",
+  "GETF", "REMF", "SYMBOL-PLIST",
 
   // misc
   "WARN", "ABORT", "ASSERT", "CHECK-TYPE", "SLEEP", "GC", "SAVE-LISP-AND-DIE",
 ]);
+
 

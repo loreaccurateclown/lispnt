@@ -5,6 +5,8 @@ import {
   BuiltInValue,
   cons,
   ConsValue,
+  HashTableValue,
+  HashTest,
   intern,
   isNil,
   LispValue,
@@ -60,6 +62,12 @@ export function expectCharValue(value: LispValue): string {
   if (value.kind !== "char")
     throw new LispEvalError("type-error", null, `expected a character, got ${value.kind}`);
   return value.value;
+}
+
+export function expectHashTable(value: LispValue): HashTableValue {
+  if (value.kind !== "hash")
+    throw new LispEvalError("type-error", null, `expected a hash table, got ${value.kind}`);
+  return value;
 }
 
 // SCHAR and CHAR agree here: both read one character and both reject an index
@@ -436,6 +444,7 @@ const typePredicates = new Map<string, (value: LispValue) => boolean>([
   ["NULL", (value) => isNil(value)],
   ["SYMBOL", (value) => value.kind === "symbol" || isNil(value)],
   ["KEYWORD", (value) => value.kind === "symbol" && value.name.startsWith(":")],
+  ["HASH-TABLE", (value) => value.kind === "hash"],
   ["NUMBER", (value) => value.kind === "number"],
   ["INTEGER", (value) => value.kind === "number" && Number.isInteger(value.value)],
   ["RATIONAL", (value) => value.kind === "number" && Number.isInteger(value.value)],
@@ -478,3 +487,117 @@ register("TYPEP", 2, 2, (args) => {
     `TYPEP: Lispnt does not know the type specifier ${specifier.name}`,
   );
 });
+
+// A hash table finds a key again through a canonical string chosen by its
+// :test. Atoms are compared by value; under eq/eql a cons, array or structure
+// key is compared by identity; under equal/equalp by its full printed form, so
+// two structurally equal lists are one key. Full printed form, not the
+// truncated REPL form, so long keys do not collide.
+const hashKeyIds = new WeakMap<object, number>();
+let nextHashKeyId = 1;
+
+export function hashTableKey(value: LispValue, test: HashTest): string {
+  switch (value.kind) {
+    case "nil":
+      return "nil";
+    case "number":
+      return `n:${value.value}`;
+    case "string":
+      return `s:${value.value}`;
+    case "char":
+      return `c:${value.value}`;
+    case "symbol":
+      return `y:${value.name}`;
+    default:
+      break;
+  }
+
+  if (test === "eq" || test === "eql") {
+    const object = value as unknown as object;
+    const known = hashKeyIds.get(object);
+    if (known !== undefined) return `o:${known}`;
+    const id = nextHashKeyId;
+    nextHashKeyId += 1;
+    hashKeyIds.set(object, id);
+    return `o:${id}`;
+  }
+
+  return `e:${printValue(value, {
+    maxElements: Number.POSITIVE_INFINITY,
+    maxDepth: Number.POSITIVE_INFINITY,
+  })}`;
+}
+
+const hashTests: ReadonlyMap<string, HashTest> = new Map<string, HashTest>([
+  ["EQ", "eq"],
+  ["EQL", "eql"],
+  ["EQUAL", "equal"],
+  ["EQUALP", "equalp"],
+]);
+
+function hashTestFromFunction(value: LispValue): HashTest {
+  if (value.kind === "builtin") {
+    const test = hashTests.get(value.name);
+    if (test !== undefined) return test;
+  }
+  throw new LispEvalError(
+    "unsupported-standard",
+    null,
+    "MAKE-HASH-TABLE: only EQ, EQL, EQUAL and EQUALP are supported as :test",
+  );
+}
+
+register("MAKE-HASH-TABLE", 0, null, (args) => {
+  let test: HashTest = "eql";
+
+  for (let index = 0; index < args.length; index += 2) {
+    const keyword = args[index]!;
+    const name = keyword.kind === "symbol" ? keyword.name : "";
+    if (name !== ":TEST")
+      throw new LispEvalError(
+        "unsupported-standard",
+        null,
+        `MAKE-HASH-TABLE: the ${name || keyword.kind} option is not implemented`,
+      );
+
+    const value = args[index + 1];
+    if (value === undefined)
+      throw new LispEvalError(
+        "malformed-form",
+        null,
+        "MAKE-HASH-TABLE: :test needs a function",
+      );
+    test = hashTestFromFunction(value);
+  }
+
+  return { kind: "hash", test, entries: new Map() };
+});
+
+register("GETHASH", 2, 3, (args) => {
+  const table = expectHashTable(args[1]!);
+  const entry = table.entries.get(hashTableKey(args[0]!, table.test));
+  return entry === undefined ? (args[2] ?? NIL) : entry.value;
+});
+
+register("REMHASH", 2, 2, (args) => {
+  const table = expectHashTable(args[1]!);
+  return table.entries.delete(hashTableKey(args[0]!, table.test))
+    ? intern("T")
+    : NIL;
+});
+
+register("CLRHASH", 1, 1, (args) => {
+  const table = expectHashTable(args[0]!);
+  table.entries.clear();
+  return table;
+});
+
+register("HASH-TABLE-COUNT", 1, 1, (args) => ({
+  kind: "number",
+  value: expectHashTable(args[0]!).entries.size,
+}));
+
+register("HASH-TABLE-P", 1, 1, (args) =>
+  args[0]!.kind === "hash" ? intern("T") : NIL,
+);
+
