@@ -180,6 +180,101 @@ test("marks the local definition that has no argument list", () => {
   assert.deepEqual(diagnostic?.end, { line: 1, column: 13, offset: 12 });
 });
 
+// A special form with the wrong number of parts. The message is the repair, and
+// a name warning inside the marked form is suppressed so the learner sees one
+// thing to fix rather than four echoes of it.
+test("says what IF needs", () => {
+  const [diagnostic] = analyze("(if x)");
+
+  assert.equal(diagnostic?.code, "operand-count");
+  assert.equal(
+    diagnostic?.message,
+    "IF takes a test, a then-branch and an optional else-branch: write `(if test then else)`.",
+  );
+  assert.deepEqual(diagnostic?.end, { line: 1, column: 7, offset: 6 });
+});
+
+test("marks IF once even with extra branches", () => {
+  assert.deepEqual(
+    analyze("(if x y z w)").map((diagnostic) => diagnostic.code),
+    ["operand-count"],
+  );
+});
+
+test("says what SETQ needs", () => {
+  const [diagnostic] = analyze("(setq a)");
+
+  assert.equal(diagnostic?.code, "operand-count");
+  assert.match(diagnostic?.message ?? "", /SETQ takes pairs/);
+});
+
+test("marks a COND clause that is not a list", () => {
+  const [diagnostic] = analyze("(cond 1)");
+
+  assert.equal(diagnostic?.code, "clause-shape");
+  assert.deepEqual(diagnostic?.position, { line: 1, column: 7, offset: 6 });
+});
+
+test("marks an empty COND clause", () => {
+  assert.deepEqual(
+    analyze("(cond ())").map((diagnostic) => diagnostic.code),
+    ["clause-shape"],
+  );
+});
+
+test("marks a CASE clause that is not a list", () => {
+  assert.deepEqual(
+    analyze("(case 1 foo)").map((diagnostic) => diagnostic.code),
+    ["clause-shape"],
+  );
+});
+
+test("asks DO for its end-test clause", () => {
+  const [diagnostic] = analyze("(do ((i 0)))");
+
+  assert.equal(diagnostic?.code, "do-end-test");
+  assert.match(diagnostic?.message ?? "", /DO needs an end-test clause/);
+});
+
+test("marks a DO binding that is not a name", () => {
+  assert.deepEqual(
+    analyze("(do (9) (t 1))").map((diagnostic) => diagnostic.code),
+    ["do-binding"],
+  );
+});
+
+test("asks DOTIMES for a variable and a count", () => {
+  const [diagnostic] = analyze("(dotimes (i))");
+
+  assert.equal(diagnostic?.code, "iteration-spec");
+  assert.match(diagnostic?.message ?? "", /DOTIMES takes/);
+});
+
+test("asks MULTIPLE-VALUE-SETQ for a list of names", () => {
+  assert.deepEqual(
+    analyze("(multiple-value-setq a (values 1))").map(
+      (diagnostic) => diagnostic.code,
+    ),
+    ["operand-count"],
+  );
+});
+
+test("bounds RETURN", () => {
+  assert.deepEqual(
+    analyze("(return 1 2)").map((diagnostic) => diagnostic.code),
+    ["operand-count"],
+  );
+});
+
+test("leaves well-formed special forms alone", () => {
+  assert.deepEqual(analyze("(if t 1)"), []);
+  assert.deepEqual(analyze("(cond (t 1))"), []);
+  assert.deepEqual(analyze("(do ((i 0 (+ i 1))) ((> i 2) i))"), []);
+  assert.deepEqual(analyze("(dotimes (i 3) i)"), []);
+  assert.deepEqual(analyze("(dolist (x '(1)) x)"), []);
+  assert.deepEqual(analyze("(multiple-value-bind (a) (values 1) a)"), []);
+});
+
 test("reports an error that occurs after a valid first form", () => {
   const diagnostics = analyze("(list 1))");
 
@@ -544,6 +639,7 @@ test("the diagnostic showcase still demonstrates what it claims", () => {
     "reader-unexpected-eof.lisp": ["unexpected-eof"],
     "reader-dotted-tail.lisp": ["dotted-tail-extra-form", "stray-closer"],
     "let-binding.lisp": ["let-binding"],
+    "operands.lisp": ["operand-count", "operand-count"],
     "shapes.lisp": [
       "defun-name",
       "defun-arglist",

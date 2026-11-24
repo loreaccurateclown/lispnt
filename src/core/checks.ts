@@ -46,6 +46,106 @@ function checkFormSingle(
     case "FLET":
       checkLocalFunctions(list, diagnostics);
       return;
+    case "IF":
+      checkOperandRange(
+        list,
+        diagnostics,
+        2,
+        3,
+        `IF takes a test, a then-branch and an optional else-branch: write ${quote("(if test then else)")}.`,
+      );
+      return;
+    case "WHEN":
+    case "UNLESS":
+      checkOperandRange(
+        list,
+        diagnostics,
+        1,
+        null,
+        `${head} takes a test and then any number of body forms: write ${quote(`(${head.toLowerCase()} test body…)`)}.`,
+      );
+      return;
+    case "SETQ":
+    case "SETF":
+      checkSetq(list, diagnostics, head);
+      return;
+    case "COND":
+      checkCond(list, diagnostics);
+      return;
+    case "CASE":
+    case "ECASE":
+    case "CCASE":
+      checkCase(list, diagnostics, head);
+      return;
+    case "DO":
+    case "DO*":
+      checkDo(list, diagnostics, head);
+      return;
+    case "DOTIMES":
+    case "DOLIST":
+      checkIteration(list, diagnostics, head);
+      return;
+    case "MULTIPLE-VALUE-BIND":
+      checkMultipleValueBind(list, diagnostics);
+      return;
+    case "MULTIPLE-VALUE-SETQ":
+      checkMultipleValueSetq(list, diagnostics);
+      return;
+    case "RETURN":
+      checkOperandRange(
+        list,
+        diagnostics,
+        0,
+        1,
+        `RETURN takes at most one value: write ${quote("(return value)")} or ${quote("(return)")}.`,
+      );
+      return;
+    case "PUSH":
+      checkOperandRange(
+        list,
+        diagnostics,
+        2,
+        2,
+        `PUSH takes a value and a place: write ${quote("(push x stack)")}.`,
+      );
+      return;
+    case "POP":
+      checkOperandRange(
+        list,
+        diagnostics,
+        1,
+        1,
+        `POP takes a place: write ${quote("(pop stack)")}.`,
+      );
+      return;
+    case "INCF":
+    case "DECF":
+      checkOperandRange(
+        list,
+        diagnostics,
+        1,
+        2,
+        `${head} takes a place and an optional amount: write ${quote(`(${head.toLowerCase()} n)`) } or ${quote(`(${head.toLowerCase()} n 2)`)}.`,
+      );
+      return;
+    case "DEFPARAMETER":
+      checkOperandRange(
+        list,
+        diagnostics,
+        2,
+        3,
+        `DEFPARAMETER takes a name, an initial value and an optional description: write ${quote("(defparameter *x* 1)")}.`,
+      );
+      return;
+    case "DEFVAR":
+      checkOperandRange(
+        list,
+        diagnostics,
+        1,
+        3,
+        `DEFVAR takes a name with an optional initial value and description: write ${quote("(defvar *x* 1)")}.`,
+      );
+      return;
     default:
       return;
   }
@@ -237,6 +337,228 @@ function checkLocalFunctions(list: ListNode, diagnostics: Diagnostic[]): void {
       );
     }
   }
+}
+
+// A special form whose operand count is fixed or bounded. The message says what
+// to write rather than how many arguments it counted: a learner can act on the
+// first and not on the second.
+function checkOperandRange(
+  list: ListNode,
+  diagnostics: Diagnostic[],
+  min: number,
+  max: number | null,
+  message: string,
+): void {
+  const count = list.children.length - 1;
+  if (count < min || (max !== null && count > max)) {
+    diagnostics.push(
+      shapeDiagnostic("operand-count", message, list.start, list.end),
+    );
+  }
+}
+
+// An atom has no recorded end, so its diagnostic keeps the whole-line underline
+// rather than guessing where the token stops.
+function endOfNode(node: AstNode): Position | undefined {
+  return node.kind === "atom" ? undefined : node.end;
+}
+
+function checkSetq(
+  list: ListNode,
+  diagnostics: Diagnostic[],
+  head: string,
+): void {
+  const count = list.children.length - 1;
+  // (setq) and (setf) are legal and answer NIL; an odd count is the mistake.
+  if (count % 2 === 0) return;
+  diagnostics.push(
+    shapeDiagnostic(
+      "operand-count",
+      head === "SETQ"
+        ? `SETQ takes pairs of a name and a value: write ${quote("(setq x 1)")}.`
+        : `SETF takes pairs of a place and a value: write ${quote("(setf (car x) 1)")}.`,
+      list.start,
+      list.end,
+    ),
+  );
+}
+
+function checkCond(list: ListNode, diagnostics: Diagnostic[]): void {
+  for (const clause of list.children.slice(1)) {
+    if (clause.kind !== "list" || clause.prefix !== undefined) {
+      diagnostics.push(
+        shapeDiagnostic(
+          "clause-shape",
+          `A COND clause is a test and its body inside brackets: write ${quote("((test) …)")}.`,
+          clause.start,
+          endOfNode(clause),
+        ),
+      );
+      continue;
+    }
+    if (clause.children.length === 0) {
+      diagnostics.push(
+        shapeDiagnostic(
+          "clause-shape",
+          `A COND clause needs a test: write ${quote("((test) …)")}.`,
+          clause.start,
+          clause.end,
+        ),
+      );
+    }
+  }
+}
+
+function checkCase(
+  list: ListNode,
+  diagnostics: Diagnostic[],
+  head: string,
+): void {
+  for (const clause of list.children.slice(2)) {
+    if (clause.kind === "list" && clause.prefix === undefined) continue;
+    diagnostics.push(
+      shapeDiagnostic(
+        "clause-shape",
+        `Each ${head} clause is a list of keys and its body: write ${quote("((1) …)")}.`,
+        clause.start,
+        endOfNode(clause),
+      ),
+    );
+  }
+}
+
+function checkDo(
+  list: ListNode,
+  diagnostics: Diagnostic[],
+  head: string,
+): void {
+  const example = quote(
+    `(${head.toLowerCase()} ((i 0)) ((> i 10) i) …)`,
+  );
+  const bindings = list.children[1];
+
+  if (
+    bindings === undefined ||
+    bindings.kind !== "list" ||
+    bindings.prefix !== undefined
+  ) {
+    diagnostics.push(
+      shapeDiagnostic(
+        "let-bindings",
+        `${head} needs a list of bindings after its name: write ${example}.`,
+        list.start,
+        list.end,
+      ),
+    );
+    return;
+  }
+
+  if (!bindings.children.every(isDoBinding)) {
+    diagnostics.push(
+      shapeDiagnostic(
+        "do-binding",
+        `Each ${head} binding is a name or ${quote("(name init step)")}: write ${quote("((i 0 (1+ i)))")}.`,
+        list.start,
+        list.end,
+      ),
+    );
+  }
+
+  const endClause = list.children[2];
+  if (
+    endClause === undefined ||
+    endClause.kind !== "list" ||
+    endClause.prefix !== undefined ||
+    endClause.children.length === 0
+  ) {
+    diagnostics.push(
+      shapeDiagnostic(
+        "do-end-test",
+        `${head} needs an end-test clause after its bindings: write ${example}.`,
+        list.start,
+        list.end,
+      ),
+    );
+  }
+}
+
+function isDoBinding(entry: AstNode): boolean {
+  if (isSymbolNode(entry)) return true;
+  if (!isListNode(entry) || entry.tail !== undefined) return false;
+  if (entry.children.length < 1 || entry.children.length > 3) return false;
+  const name = entry.children[0];
+  return name !== undefined && isSymbolNode(name);
+}
+
+function checkIteration(
+  list: ListNode,
+  diagnostics: Diagnostic[],
+  head: string,
+): void {
+  const example = quote(
+    head === "DOTIMES" ? "(dotimes (i 3) …)" : "(dolist (x list) …)",
+  );
+  const spec = list.children[1];
+  const ok =
+    spec !== undefined &&
+    spec.kind === "list" &&
+    spec.prefix === undefined &&
+    spec.children.length >= 2 &&
+    spec.children.length <= 3 &&
+    spec.children[0] !== undefined &&
+    isSymbolNode(spec.children[0]);
+
+  if (ok) return;
+  diagnostics.push(
+    shapeDiagnostic(
+      "iteration-spec",
+      `${head} takes ${quote(head === "DOTIMES" ? "(variable count [result])" : "(variable list [result])")}: write ${example}.`,
+      list.start,
+      list.end,
+    ),
+  );
+}
+
+function checkMultipleValueBind(
+  list: ListNode,
+  diagnostics: Diagnostic[],
+): void {
+  const names = list.children[1];
+  const ok =
+    names !== undefined &&
+    names.kind === "list" &&
+    names.prefix === undefined &&
+    list.children.length >= 3;
+  if (ok) return;
+  diagnostics.push(
+    shapeDiagnostic(
+      "operand-count",
+      `MULTIPLE-VALUE-BIND takes a list of names and then the form that produces the values: write ${quote("(multiple-value-bind (a b) (values 1 2) …)")}.`,
+      list.start,
+      list.end,
+    ),
+  );
+}
+
+function checkMultipleValueSetq(
+  list: ListNode,
+  diagnostics: Diagnostic[],
+): void {
+  const names = list.children[1];
+  const ok =
+    names !== undefined &&
+    names.kind === "list" &&
+    names.prefix === undefined &&
+    list.children.length === 3;
+  if (ok) return;
+  diagnostics.push(
+    shapeDiagnostic(
+      "operand-count",
+      `MULTIPLE-VALUE-SETQ takes a list of names and one form: write ${quote("(multiple-value-setq (a b) (values 1 2))")}.`,
+      list.start,
+      list.end,
+    ),
+  );
 }
 
 function isListNode(node: AstNode): node is ListNode {

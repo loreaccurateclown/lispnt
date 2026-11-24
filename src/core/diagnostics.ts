@@ -15,7 +15,12 @@ export type ShapeCode =
   | "let-bindings"
   | "let-binding"
   | "local-definitions"
-  | "local-definition";
+  | "local-definition"
+  | "operand-count"
+  | "clause-shape"
+  | "do-end-test"
+  | "do-binding"
+  | "iteration-spec";
 
 // Name mistakes found without evaluating the file. The other three codes these
 // checks use (undefined-function, unbound-variable, arity) come from EvalErrorCode

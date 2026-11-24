@@ -17,6 +17,6 @@
 
 (setf 5 1)
 
-(incf)
+(defstruct 5)
 
 (error "This message is mine: the learner wrote it.")

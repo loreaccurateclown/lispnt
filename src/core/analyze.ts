@@ -13,7 +13,7 @@ import {
   withStepCeiling,
 } from "./interpreter";
 import { checkNames } from "./name-checks";
-import { type AstNode, createReader } from "./reader";
+import { type AstNode, createReader, type Position } from "./reader";
 import { collectSymbols } from "./scopes";
 import { emptyTraceMarkers } from "./trace-cases";
 
@@ -35,6 +35,20 @@ function isCoveredByDiagnostic(
     if (form.kind === "list")
       return diagnostic.position.offset < form.end.offset;
     return true;
+  });
+}
+
+// True when a name diagnostic sits inside a form the shape pass already marked.
+// A shape mark without an end cannot say how far it reaches, so it suppresses
+// nothing; every mark the shape pass makes today carries one.
+function insideShapeMark(
+  diagnostic: Diagnostic,
+  shapeMarks: readonly Diagnostic[],
+): boolean {
+  const at: Position = diagnostic.position;
+  return shapeMarks.some((mark) => {
+    if (mark.end === undefined) return mark.position.offset === at.offset;
+    return at.offset > mark.position.offset && at.offset < mark.end.offset;
   });
 }
 
@@ -67,7 +81,8 @@ export function analyze(source: string): Diagnostic[] {
     diagnostics.push(diagnosticFromError(error, lastCompleteLine));
   }
 
-  diagnostics.push(...checkForms(forms, source));
+  const shapeDiagnostics = checkForms(forms, source);
+  diagnostics.push(...shapeDiagnostics);
 
   // A file that loads another cannot be checked for undefined functions: the
   // definitions may arrive from the loaded file.
@@ -124,8 +139,14 @@ export function analyze(source: string): Diagnostic[] {
   });
 
   // Whole-file name checks: they see every body, including the ones evaluation
-  // never reaches.
-  diagnostics.push(...checkNames(forms));
+  // never reaches. A name inside a form that already has a shape mark is left
+  // out: the shape comes first, and the learner should see one repair, not four
+  // warnings inside a form that cannot run.
+  diagnostics.push(
+    ...checkNames(forms).filter(
+      (diagnostic) => !insideShapeMark(diagnostic, shapeDiagnostics),
+    ),
+  );
 
   // Last, after evaluation: a marker warning can sit inside a definition, and
   // isCoveredByDiagnostic would skip evaluating that form if the warning came
