@@ -33,9 +33,14 @@
         "icon": "$(pinned)"
       },
       {
-        "command": "lispnt.toggleValueHints",
-        "title": "Lispnt: Toggle Value Hints (Widget Only)",
+        "command": "lispnt.showValueHints",
+        "title": "Lispnt: Show Value Hints (Widget Only)",
         "icon": "$(eye)"
+      },
+      {
+        "command": "lispnt.hideValueHints",
+        "title": "Lispnt: Hide Value Hints (Widget Only)",
+        "icon": "$(eye-closed)"
       }
     ],
     "menus": {
@@ -43,22 +48,27 @@
         {
           "command": "lispnt.showTrace",
           "when": "view == lispnt.trace",
-          "group": "navigation"
+          "group": "navigation@1"
         },
         {
           "command": "lispnt.pinTrace",
           "when": "view == lispnt.trace && !lispnt.pinned",
-          "group": "navigation"
+          "group": "navigation@2"
         },
         {
           "command": "lispnt.unpinTrace",
           "when": "view == lispnt.trace && lispnt.pinned",
-          "group": "navigation"
+          "group": "navigation@2"
         },
         {
-          "command": "lispnt.toggleValueHints",
-          "when": "view == lispnt.trace",
-          "group": "navigation"
+          "command": "lispnt.showValueHints",
+          "when": "view == lispnt.trace && !lispnt.valueHints",
+          "group": "navigation@3"
+        },
+        {
+          "command": "lispnt.hideValueHints",
+          "when": "view == lispnt.trace && lispnt.valueHints",
+          "group": "navigation@3"
         }
       ]
     },

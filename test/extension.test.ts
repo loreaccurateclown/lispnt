@@ -256,10 +256,11 @@ test("registers the collection, channel, listeners, trace provider and six comma
     "lispnt.showTrace",
     "lispnt.pinTrace",
     "lispnt.unpinTrace",
-    "lispnt.toggleValueHints",
+    "lispnt.showValueHints",
+    "lispnt.hideValueHints",
   ]);
   assert.deepEqual([...fake.providers.keys()], ["lispnt-trace"]);
-  assert.equal(fake.context.subscriptions.length, 18);
+  assert.equal(fake.context.subscriptions.length, 19);
 });
 
 test("reports a mistake in an opened Lisp file", () => {
@@ -724,7 +725,7 @@ test("the widget toggle switches end-of-line hints on for the traced file", asyn
   const fake = fakeApi({ active });
   activate(fake);
 
-  await fake.commands.get("lispnt.toggleValueHints")?.();
+  await fake.commands.get("lispnt.showValueHints")?.();
 
   const range = { start: { line: 0, character: 0 }, end: { line: 10, character: 0 } };
   const hints = fake.inlayProviders.at(-1)?.provideInlayHints(active, range);
@@ -732,7 +733,7 @@ test("the widget toggle switches end-of-line hints on for the traced file", asyn
     { position: { line: 0, character: 21 }, label: "X = 5", paddingLeft: true },
   ]);
 
-  await fake.commands.get("lispnt.toggleValueHints")?.();
+  await fake.commands.get("lispnt.hideValueHints")?.();
   assert.deepEqual(fake.inlayProviders.at(-1)?.provideInlayHints(active, range), []);
 });
 
@@ -741,7 +742,7 @@ test("the value hint toggle is per file", async () => {
   const fake = fakeApi({ active });
   activate(fake);
 
-  await fake.commands.get("lispnt.toggleValueHints")?.();
+  await fake.commands.get("lispnt.showValueHints")?.();
 
   const range = { start: { line: 0, character: 0 }, end: { line: 10, character: 0 } };
   const other = documentOf("b.lisp", "(defun f (x) (* x 2))\n(f 5)");
