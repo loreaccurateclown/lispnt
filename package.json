@@ -31,6 +31,16 @@
         "command": "lispnt.unpinTrace",
         "title": "Lispnt: Unpin the Traced File (Widget Only)",
         "icon": "$(pinned)"
+      },
+      {
+        "command": "lispnt.showValueHints",
+        "title": "Lispnt: Show Value Hints (Widget Only)",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "lispnt.hideValueHints",
+        "title": "Lispnt: Hide Value Hints (Widget Only)",
+        "icon": "$(eye-closed)"
       }
     ],
     "menus": {
@@ -49,6 +59,16 @@
           "command": "lispnt.unpinTrace",
           "when": "view == lispnt.trace && lispnt.pinned",
           "group": "navigation"
+        },
+        {
+          "command": "lispnt.showValueHints",
+          "when": "view == lispnt.trace && !lispnt.valueHints",
+          "group": "navigation"
+        },
+        {
+          "command": "lispnt.hideValueHints",
+          "when": "view == lispnt.trace && lispnt.valueHints",
+          "group": "navigation"
         }
       ]
     },
@@ -64,11 +84,6 @@
           "type": "number",
           "default": 300,
           "description": "How long to wait after an edit before checking the file again."
-        },
-        "lispnt.showValueHints": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show the value a name had the last time the code ran, inline in the editor."
         }
       }
     },
@@ -99,7 +114,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node dist/test/reader.test.js && node dist/test/analyze.test.js && node dist/test/interpreter.test.js && node dist/test/print.test.js && node dist/test/pipeline.test.js && node dist/test/bindings.test.js && node dist/test/scopes.test.js && node dist/test/name-checks.test.js && node dist/test/hints.test.js && node dist/test/trace.test.js && node dist/test/trace-cases.test.js && node dist/test/trace-tree.test.js && node dist/test/inlay-hints.test.js && node dist/test/extension.test.js"
+    "test": "npm run build && node dist/test/reader.test.js && node dist/test/analyze.test.js && node dist/test/interpreter.test.js && node dist/test/print.test.js && node dist/test/pipeline.test.js && node dist/test/bindings.test.js && node dist/test/scopes.test.js && node dist/test/name-checks.test.js && node dist/test/hints.test.js && node dist/test/trace.test.js && node dist/test/trace-cases.test.js && node dist/test/trace-tree.test.js && node dist/test/value-hints.test.js && node dist/test/extension.test.js"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

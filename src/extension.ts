@@ -5,6 +5,7 @@ import type {
   VsCollapsibleState,
   VsDiagnostic,
   VsDiagnosticCollection,
+  VsHoverProvider,
   VsInlayHint,
   VsInlayHintsProvider,
   VsSeverity,
@@ -112,13 +113,24 @@ function adapter(): VsCodeApi {
     registerInlayHintsProvider: (provider: VsInlayHintsProvider) =>
       vscode.languages.registerInlayHintsProvider(LISP_SELECTOR, {
         provideInlayHints: (document, range) =>
-          provider.provideInlayHints(document, range).map(
-            (hint) =>
-              new vscode.InlayHint(
-                new vscode.Position(hint.position.line, hint.position.character),
-                hint.label,
-              ),
-          ),
+          provider.provideInlayHints(document, range).map((hint) => {
+            const item = new vscode.InlayHint(
+              new vscode.Position(hint.position.line, hint.position.character),
+              hint.label,
+            );
+            if (hint.paddingLeft !== undefined) item.paddingLeft = hint.paddingLeft;
+            return item;
+          }),
+      }),
+    registerHoverProvider: (provider: VsHoverProvider) =>
+      vscode.languages.registerHoverProvider(LISP_SELECTOR, {
+        provideHover: (document, position) => {
+          const hover = provider.provideHover(document, {
+            line: position.line,
+            character: position.character,
+          });
+          return hover === undefined ? undefined : new vscode.Hover(hover.contents);
+        },
       }),
     registerCommand: (id, run) => vscode.commands.registerCommand(id, run),
     onDidOpenTextDocument: (listener) =>

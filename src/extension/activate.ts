@@ -7,9 +7,13 @@ import type {
   VsTextDocument,
 } from "./api";
 import { presentDiagnostics } from "./present";
-import { createInlayHintsProvider } from "./inlay-hints";
 import { formatTraceReport, TRACE_SCHEME, TRACE_URI } from "./trace-report";
 import { traceTree, type TraceNode } from "./trace-tree";
+import {
+  createHintRuns,
+  createHoverProvider,
+  createInlayHintsProvider,
+} from "./value-hints";
 
 // A file is ours when the editor calls it Lisp, or when its name says so. The
 // second test matters when no Lisp extension is installed and the language id is
@@ -41,16 +45,24 @@ export function activateExtension(
     options.debounceMs ?? (typeof configured === "number" ? configured : 300);
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  // Inline value hints are the M4 story in the editor, and they run the file, so
-  // their own setting gates them; the diagnostics switch is about mistakes and
-  // does not have to turn values off as well.
-  const inlayHints = api.registerInlayHintsProvider(
-    createInlayHintsProvider(
-      () => api.getConfiguration("lispnt").get("showValueHints") !== false,
-    ),
-  );
+  // Value hints have two surfaces. Hovering is on demand and paints nothing, so
+  // it is always registered. End-of-line hints are switched on per file from the
+  // trace view; the set is session state, not a setting, so a reload means
+  // clicking again rather than writing to the user's configuration.
+  const hintRuns = createHintRuns();
+  const valueHintFiles = new Set<string>();
 
-  context.subscriptions.push(channel, collection, inlayHints, {
+  const registerInlayHints = (): VsDisposable =>
+    api.registerInlayHintsProvider(
+      createInlayHintsProvider(hintRuns, (document) =>
+        valueHintFiles.has(document.uri.toString()),
+      ),
+    );
+
+  let inlayHints = registerInlayHints();
+  const hoverHints = api.registerHoverProvider(createHoverProvider(hintRuns));
+
+  context.subscriptions.push(channel, collection, inlayHints, hoverHints, {
     dispose: () => {
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();
@@ -141,6 +153,7 @@ export function activateExtension(
       roots = [];
       traceTreeView.setMessage("Open a Lisp file to see its traces.");
       traceTreeView.refresh();
+      syncValueHintsContext();
       return;
     }
 
@@ -148,6 +161,7 @@ export function activateExtension(
     roots = view.kind === "tree" ? view.roots : [];
     traceTreeView.setMessage(pinned ? `${view.message} · pinned` : view.message);
     traceTreeView.refresh();
+    syncValueHintsContext();
   };
 
   const togglePin = async (): Promise<void> => {
@@ -163,6 +177,33 @@ export function activateExtension(
     refreshTraceTree();
   };
 
+  const syncValueHintsContext = (): void => {
+    const document = treeDocument;
+    void api.setContext(
+      "lispnt.valueHints",
+      document !== undefined && valueHintFiles.has(document.uri.toString()),
+    );
+  };
+
+  const setValueHints = async (enabled: boolean): Promise<void> => {
+    const document = treeDocument ?? activeLispDocument();
+    if (document === undefined) {
+      channel.appendLine("Lispnt: no Lisp file to show values for");
+      return;
+    }
+
+    const uri = document.uri.toString();
+    if (enabled) valueHintFiles.add(uri);
+    else valueHintFiles.delete(uri);
+
+    await api.setContext("lispnt.valueHints", enabled);
+
+    // There is no refresh event for inlay hints, so replacing the registration is
+    // what makes the editor ask again.
+    inlayHints.dispose();
+    inlayHints = registerInlayHints();
+    context.subscriptions.push(inlayHints);
+  };
   // The trace view is a generated read-only document. Keeping the text in a map
   // lets the provider answer with the latest report, and refresh() is how a
   // second run replaces what the learner is looking at.
@@ -250,6 +291,8 @@ export function activateExtension(
     api.registerCommand("lispnt.showTrace", showTrace),
     api.registerCommand("lispnt.pinTrace", togglePin),
     api.registerCommand("lispnt.unpinTrace", togglePin),
+    api.registerCommand("lispnt.showValueHints", () => setValueHints(true)),
+    api.registerCommand("lispnt.hideValueHints", () => setValueHints(false)),
   );
 
   // Documents already open when the extension activates get checked too, so a

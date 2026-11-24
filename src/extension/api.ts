@@ -58,6 +58,7 @@ export interface VsConfiguration {
 export interface VsInlayHint {
   readonly position: VsPosition;
   readonly label: string;
+  readonly paddingLeft?: boolean;
 }
 
 export interface VsInlayHintsProvider {
@@ -65,6 +66,18 @@ export interface VsInlayHintsProvider {
     document: VsTextDocument,
     range: VsRange,
   ): readonly VsInlayHint[];
+}
+
+// The on-demand surface: shown when the pointer rests on a name.
+export interface VsHover {
+  readonly contents: string;
+}
+
+export interface VsHoverProvider {
+  provideHover(
+    document: VsTextDocument,
+    position: VsPosition,
+  ): VsHover | undefined;
 }
 
 // A read-only document the extension generates rather than reads from disk:
@@ -104,6 +117,7 @@ export interface VsCodeApi {
   createDiagnosticCollection(name: string): VsDiagnosticCollection;
   createTreeView<Item>(id: string, provider: VsTreeProvider<Item>): VsTreeView;
   registerInlayHintsProvider(provider: VsInlayHintsProvider): VsDisposable;
+  registerHoverProvider(provider: VsHoverProvider): VsDisposable;
   registerCommand(id: string, run: () => void | Promise<void>): VsDisposable;
   onDidOpenTextDocument(listener: (document: VsTextDocument) => void): VsDisposable;
   onDidChangeTextDocument(
