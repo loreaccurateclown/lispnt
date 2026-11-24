@@ -1214,9 +1214,58 @@ test("leaves do when the body returns", () => {
   );
 });
 
-test("runs a do body with no end test until a budget stops it", () => {
+// A DO with no end-test clause used to spin forever: nothing was evaluated per
+// pass, so the step budget never advanced and could not stop it. Every probe
+// here runs under a small ceiling, so a regression fails fast (as an
+// evaluation-budget error the assertion rejects) instead of hanging the suite.
+test("rejects a do with no end-test clause", () => {
+  assert.throws(
+    () => withStepCeiling(1000, () => evalIn("(do ((i 0)))")),
+    (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "malformed-form";
+    },
+  );
+});
+
+test("rejects a do whose end-test clause is empty", () => {
   assert.throws(
     () => withStepCeiling(1000, () => evalIn("(do ((i 0 (+ i 1))) ())")),
+    (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "malformed-form";
+    },
+  );
+});
+
+test("rejects a do whose end-test clause is not a list", () => {
+  assert.throws(() => evalIn("(do ((i 0)) i)"), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "malformed-form";
+  });
+});
+
+test("stops a do whose end test never holds", () => {
+  assert.throws(
+    () => withStepCeiling(1000, () => evalIn("(do ((i 0 (+ i 1))) ((= i -1) i))")),
+    (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "evaluation-budget";
+    },
+  );
+});
+
+test("charges the budget for a dotimes pass with no body", () => {
+  assert.throws(
+    () => withStepCeiling(100, () => evalIn("(dotimes (i 1000000))")),
+    (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "evaluation-budget";
+    },
+  );
+});
+
+test("charges the budget for a dolist pass with no body", () => {
+  assert.throws(
+    () =>
+      withStepCeiling(10, () =>
+        evalIn("(dolist (x (list 1 2 3 4 5 6 7 8 9 10 11 12)))"),
+      ),
     (error: unknown) => {
       return error instanceof LispEvalError && error.code === "evaluation-budget";
     },

@@ -659,6 +659,7 @@ function evalDolist(form: ListNode, env: Env): LispValue {
 
   try {
     for (const item of items) {
+      spendStep(); // a pass with an empty body must still cost something
       const scope = createEnv(env);
       define(scope, name, item);
       evaluateBody(form.children.slice(2), scope);
@@ -698,6 +699,7 @@ function evalDotimes(form: ListNode, env: Env): LispValue {
 
   try {
     for (let index = 0; index < count; index += 1) {
+      spendStep(); // a pass with an empty body must still cost something
       const scope = createEnv(env);
       define(scope, name, { kind: "number", value: index });
       evaluateBody(form.children.slice(2), scope);
@@ -764,10 +766,21 @@ function evalDo(form: ListNode, env: Env, sequential: boolean): LispValue {
       ? endNode
       : undefined;
   const testNode = endClause?.children[0];
+  // CL requires the end-test clause. Treating a missing one as "never
+  // terminate" turned (do ((i 0))) into an infinite loop that evaluated nothing
+  // per pass, so the step budget never advanced and could not stop it.
+  if (testNode === undefined) {
+    throw new LispEvalError(
+      "malformed-form",
+      null,
+      `${head} needs an end-test clause after its bindings`,
+    );
+  }
   const resultNodes = endClause === undefined ? [] : endClause.children.slice(1);
 
   for (;;) {
-    if (testNode !== undefined && isTruthy(evaluate(testNode, scope))) {
+    spendStep(); // a pass with an empty body must still cost something
+    if (isTruthy(evaluate(testNode, scope))) {
       let result: LispValue = NIL;
       for (const resultNode of resultNodes) result = evaluate(resultNode, scope);
       return result;
