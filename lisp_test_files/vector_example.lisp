@@ -4,3 +4,4 @@
 (defun IS-EMPTY-P (stk)
   (= (aref stk 1) -1))
 ;just checks for the index value
+;;[trace] (IS-EMPTY-P (NEW-STACK 3))

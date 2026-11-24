@@ -6,3 +6,4 @@
     (t acc) ;;unnecessary but I'm sentimental
     )
   )
+;;[trace] (SUM-TREE '(1 (2 3) 4))

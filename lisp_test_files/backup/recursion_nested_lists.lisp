@@ -13,3 +13,5 @@
       )
   ))
 
+
+;;[trace] (COUNT-SINGLE-CHILD-NODES '(a (b (c)) (d e)))

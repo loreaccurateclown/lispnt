@@ -7,3 +7,4 @@
           )
       )
   )
+;;[trace] (COUNT-ZEROS '(0 1 0 0))

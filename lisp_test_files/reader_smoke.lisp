@@ -32,3 +32,5 @@ and the outer comment ends at the marker after this line. |#
       (+ (first (first pairs))
          (second (first pairs))
          (pair-sum (rest pairs)))))
+
+;;[trace] (PAIR-SUM '((1 2) (3 4)))
