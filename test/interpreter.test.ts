@@ -1274,6 +1274,26 @@ test("answers a plain type specifier", () => {
   assert.deepEqual(evalIn("(typep 5 't)"), intern("T"));
 });
 
+// Verified against SBCL: a string is a vector of characters, so it is an array
+// and a vector, and AREF reads it. Its element type is exactly CHARACTER, which
+// is why (vector t) does not hold it.
+test("treats a string as a vector of characters", () => {
+  assert.deepEqual(evalIn("(typep \"s\" 'array)"), intern("T"));
+  assert.deepEqual(evalIn("(typep \"s\" 'vector)"), intern("T"));
+  assert.deepEqual(evalIn("(arrayp \"s\")"), intern("T"));
+  assert.deepEqual(evalIn("(vectorp \"s\")"), intern("T"));
+  assert.deepEqual(evalIn("(typep \"s\" '(vector character))"), intern("T"));
+  assert.ok(isNil(evalIn("(typep \"s\" '(vector t))")));
+  // A simple string's element type is exactly CHARACTER, not BASE-CHAR.
+  assert.ok(isNil(evalIn("(typep \"s\" '(vector base-char))")));
+  assert.deepEqual(evalIn("(typep \"s\" 'simple-string)"), intern("T"));
+  assert.deepEqual(evalIn("(typep #(1 2) 'simple-vector)"), intern("T"));
+  assert.deepEqual(evalIn("(aref \"abc\" 1)"), { kind: "char", value: "b" });
+  assert.deepEqual(evalIn("(arrayp #(1 2))"), intern("T"));
+  assert.ok(isNil(evalIn("(vectorp '(1))")));
+  assert.ok(isNil(evalIn("(typep '(1) 'vector)")));
+});
+
 test("refuses a type specifier it does not model", () => {
   assert.throws(() => evalIn("(typep 3 '(satisfies evenp))"), (error: unknown) => {
     return error instanceof LispEvalError && error.code === "unsupported-standard";

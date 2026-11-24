@@ -492,7 +492,10 @@ register("MAKE-STRING", 1, null, (args) => {
 });
 
 register("AREF", 2, 2, (args) => {
-  const array = expectArray(args[0]!);
+  const sequence = args[0]!;
+  // A string is a vector of characters, so AREF reads it the way SBCL does.
+  if (sequence.kind === "string") return charAt(sequence, args[1]!, "AREF");
+  const array = expectArray(sequence);
   const at = expectInteger(args[1]!);
   if (at < 0 || at >= array.elements.length)
     throw new LispEvalError("index-error", null, `AREF: index ${at} out of range`);
@@ -750,8 +753,13 @@ const typePredicates = new Map<string, (value: LispValue) => boolean>([
   ["LIST", (value) => value.kind === "cons" || isNil(value)],
   ["CONS", (value) => value.kind === "cons"],
   ["ATOM", (value) => value.kind !== "cons"],
-  ["ARRAY", (value) => value.kind === "array"],
-  ["VECTOR", (value) => value.kind === "array"],
+  // A string is a vector of characters, and every vector is an array.
+  ["ARRAY", (value) => value.kind === "array" || value.kind === "string"],
+  ["VECTOR", (value) => value.kind === "array" || value.kind === "string"],
+  // Every string here is simple (no displacement, no adjustment) and so is
+  // every array.
+  ["SIMPLE-STRING", (value) => value.kind === "string"],
+  ["SIMPLE-VECTOR", (value) => value.kind === "array"],
   ["STRING", (value) => value.kind === "string"],
   ["CHARACTER", (value) => value.kind === "char"],
   ["FUNCTION", (value) => value.kind === "function" || value.kind === "builtin"],
@@ -886,8 +894,15 @@ function matchesCons(value: LispValue, parts: readonly LispValue[]): boolean {
 }
 
 function matchesVector(value: LispValue, parts: readonly LispValue[]): boolean {
-  if (value.kind !== "array") return false;
   const element = parts[0];
+
+  // A string's element type is exactly CHARACTER, which is why SBCL answers T
+  // for (vector character) and NIL for (vector t): a string cannot hold any
+  // object, only characters.
+  if (value.kind === "string")
+    return element !== undefined && isCharacterSpecifier(element);
+
+  if (value.kind !== "array") return false;
   if (element === undefined) return true;
 
   const length = arrayLength(value);
@@ -896,6 +911,12 @@ function matchesVector(value: LispValue, parts: readonly LispValue[]): boolean {
     if (item === undefined || !typepMatches(item, element)) return false;
   }
   return true;
+}
+
+// A string's element type is exactly CHARACTER; SBCL answers NIL even for
+// (vector base-char), which a simple string does not have exactly.
+function isCharacterSpecifier(specifier: LispValue): boolean {
+  return specifier.kind === "symbol" && specifier.name === "CHARACTER";
 }
 
 // A hash table finds a key again through a canonical string chosen by its
@@ -1086,6 +1107,16 @@ register("HASH-TABLE-COUNT", 1, 1, (args) => ({
 
 register("HASH-TABLE-P", 1, 1, (args) =>
   args[0]!.kind === "hash" ? intern("T") : NIL,
+);
+
+// Strings count here too: a string is a vector of characters and every vector is
+// an array, as SBCL answers.
+register("ARRAYP", 1, 1, (args) =>
+  args[0]!.kind === "array" || args[0]!.kind === "string" ? intern("T") : NIL,
+);
+
+register("VECTORP", 1, 1, (args) =>
+  args[0]!.kind === "array" || args[0]!.kind === "string" ? intern("T") : NIL,
 );
 
 // CL answers the test as a function designator; the table stores it by name.
