@@ -1,10 +1,33 @@
+# What the package must not carry. The extension needs only dist/src, media
+# and the manifest; everything else here is notes, corpus or tooling.
+# `vsce ls --tree` is the check: it must list nothing outside those three.
+#
+# Excludes only, no `!` negations. An allowlist was tried first (`*` then
+# `!dist/src/**`): vsce re-included every sourcemap that `*.map` excluded, so
+# the negations were winning regardless of order. A bare `*.map` also does not
+# reach into subdirectories here, which is why `dist/**/*.map` is named too.
+HANDOFF.md
+ROADMAP.md
+bench/**
+userdocs/**
+examples/**
+lisp_test_files/**
 src/**
 test/**
 dist/test/**
 node_modules/**
 .npm-cache/**
+.dsh-code-index/**
 .vscode/**
+.git/**
+dist/**/*.map
 *.map
 *.ts
+*.vsix
+*.code-workspace
 tsconfig.json
 package-lock.json
+.gitignore
+.gitattributes
+.npmrc
+.vscodeignore

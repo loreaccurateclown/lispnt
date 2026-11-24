@@ -1,8 +1,10 @@
 {
   "name": "lispnt",
+  "displayName": "Lispnt",
   "version": "0.0.1",
   "private": true,
   "description": "Lispnt - a gentle, read-only diagnostic path for Common Lisp (SBCL), alongside OLIVE.",
+  "license": "MIT",
   "main": "./dist/src/extension.js",
   "engines": {
     "vscode": "^1.147.0"
@@ -114,6 +116,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
+    "bench": "npm run build && node bench/run.mjs",
     "test": "npm run build && node dist/test/reader.test.js && node dist/test/analyze.test.js && node dist/test/interpreter.test.js && node dist/test/print.test.js && node dist/test/pipeline.test.js && node dist/test/bindings.test.js && node dist/test/scopes.test.js && node dist/test/name-checks.test.js && node dist/test/hints.test.js && node dist/test/trace.test.js && node dist/test/trace-cases.test.js && node dist/test/trace-tree.test.js && node dist/test/value-hints.test.js && node dist/test/extension.test.js"
   },
   "devDependencies": {
