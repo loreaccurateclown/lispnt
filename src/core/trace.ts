@@ -170,7 +170,7 @@ export function renderTrace(
       lines.push(...renderFrame(frame, 0, context));
     }
 
-    lines.push(summaryLine(result, context));
+    lines.push(traceSummary(result));
   }
 
   if (result.unavailable === "unparsed") lines.push("… could not parse");
@@ -280,11 +280,13 @@ function renderCall(frame: TraceFrame): string {
   return line;
 }
 
-function summaryLine(result: TraceResult, context: RenderContext): string {
+// One line describing a whole trace, shared by the text view and the tree view
+// so the two cannot disagree.
+export function traceSummary(result: TraceResult): string {
   const calls = countFrames(result.frames);
   const count = `${calls} call${calls === 1 ? "" : "s"}`;
-  const suffix = context.depthIsFloor ? " (limit reached)" : "";
-  const depth = `max depth: ${context.maxDepth}${suffix}`;
+  const floor = result.truncated || result.unavailable === "budget";
+  const depth = `max depth: ${deepestDepth(result.frames)}${floor ? " (limit reached)" : ""}`;
 
   if (result.finalValue === undefined) return `${count} · ${depth}`;
   return `${count} · ${depth} · final value: ${result.finalValue}`;

@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { activateExtension, isLispDocument } from "../src/extension/activate";
 import { formatTraceReport } from "../src/extension/trace-report";
+import type { TraceNode } from "../src/extension/trace-tree";
 import type {
   VsCodeApi,
   VsDiagnostic,
@@ -11,6 +12,9 @@ import type {
   VsDisposable,
   VsOutputChannel,
   VsTextDocument,
+  VsTreeItem,
+  VsTreeProvider,
+  VsTreeView,
   VsUri,
 } from "../src/extension/api";
 
@@ -35,6 +39,13 @@ interface FakeOptions {
   readonly open?: VsTextDocument[];
 }
 
+interface FakeTree {
+  readonly id: string;
+  readonly provider: VsTreeProvider<TraceNode>;
+  refreshes: number;
+  message: string;
+}
+
 interface Fake {
   readonly api: VsCodeApi;
   readonly context: { subscriptions: VsDisposable[] };
@@ -47,6 +58,7 @@ interface Fake {
   readonly providers: Map<string, (uri: string) => string>;
   readonly refreshes: string[];
   readonly shown: string[];
+  readonly trees: FakeTree[];
   open(document: VsTextDocument): void;
   change(document: VsTextDocument): void;
   save(document: VsTextDocument): void;
@@ -64,6 +76,7 @@ function fakeApi(options: FakeOptions = {}): Fake {
   const providers = new Map<string, (uri: string) => string>();
   const refreshes: string[] = [];
   const shown: string[] = [];
+  const trees: FakeTree[] = [];
   let active = options.active;
 
   const openListeners: Array<(document: VsTextDocument) => void> = [];
@@ -89,6 +102,25 @@ function fakeApi(options: FakeOptions = {}): Fake {
     createDiagnosticCollection: (name) => {
       collections.push(name);
       return collection;
+    },
+    createTreeView: <Item>(id: string, provider: VsTreeProvider<Item>): VsTreeView => {
+      const tree: FakeTree = {
+        id,
+        provider: provider as unknown as VsTreeProvider<TraceNode>,
+        refreshes: 0,
+        message: "",
+      };
+      trees.push(tree);
+
+      return {
+        refresh: () => {
+          tree.refreshes += 1;
+        },
+        setMessage: (text) => {
+          tree.message = text;
+        },
+        dispose: () => undefined,
+      };
     },
     registerCommand: (id, run) => {
       commands.set(id, run);
@@ -147,6 +179,7 @@ function fakeApi(options: FakeOptions = {}): Fake {
     providers,
     refreshes,
     shown,
+    trees,
     open: (document) => {
       for (const listener of openListeners) listener(document);
     },
@@ -180,7 +213,7 @@ test("registers a collection, a channel, the listeners, a trace provider and two
   assert.deepEqual(fake.channels, ["Lispnt"]);
   assert.deepEqual([...fake.commands.keys()], ["lispnt.checkFile", "lispnt.showTrace"]);
   assert.deepEqual([...fake.providers.keys()], ["lispnt-trace"]);
-  assert.equal(fake.context.subscriptions.length, 10);
+  assert.equal(fake.context.subscriptions.length, 11);
 });
 
 test("reports a mistake in an opened Lisp file", () => {
@@ -441,4 +474,57 @@ test("the trace command says so when there is no active document", async () => {
 
   assert.deepEqual(fake.shown, []);
   assert.match(fake.channelLines[0] ?? "", /no active document to trace/);
+});
+
+test("creates the activity-bar tree and starts on the active document", () => {
+  const active = documentOf("a.lisp", `${FACT}\n;;[trace] (fact 3)`);
+  const fake = fakeApi({ active });
+  activate(fake);
+
+  assert.equal(fake.trees.length, 1);
+  const tree = fake.trees[0];
+  assert.equal(tree?.id, "lispnt.trace");
+  assert.ok((tree?.refreshes ?? 0) >= 1);
+
+  const roots = tree?.provider.getChildren() as readonly TraceNode[];
+  assert.equal(roots.length, 1);
+  assert.equal(roots[0]?.label, "(fact 3)");
+
+  const rootItem = tree?.provider.getTreeItem(roots[0]!);
+  assert.equal(rootItem?.collapsibleState, "expanded");
+  assert.equal(rootItem?.description, "line 2");
+
+  const frameItem = tree?.provider.getTreeItem(roots[0]!.children[0]!);
+  assert.equal(frameItem?.label, "FACT(3)");
+  assert.equal(frameItem?.description, "= 6");
+});
+
+test("the tree gives a throwing frame the error icon", () => {
+  const active = documentOf("a.lisp", "(defun head-of (x) (car x))\n;;[trace] (head-of 1)");
+  const fake = fakeApi({ active });
+  activate(fake);
+
+  const roots = fake.trees[0]?.provider.getChildren() as readonly TraceNode[];
+  const item = fake.trees[0]?.provider.getTreeItem(roots[0]!.children[0]!);
+  assert.equal(item?.iconId, "error");
+  assert.equal(item?.description, "!! type-error");
+});
+
+test("the tree asks for a Lisp file when there is none", () => {
+  const fake = fakeApi();
+  activate(fake);
+
+  assert.match(fake.trees[0]?.message ?? "", /Open a Lisp file/);
+  assert.deepEqual(fake.trees[0]?.provider.getChildren(), []);
+});
+
+test("the trace command refreshes the tree as well as the panel", async () => {
+  const active = documentOf("a.lisp", `${FACT}\n;;[trace] (fact 3)`);
+  const fake = fakeApi({ active });
+  activate(fake);
+
+  const before = fake.trees[0]?.refreshes ?? 0;
+  await fake.commands.get("lispnt.showTrace")?.();
+
+  assert.equal(fake.trees[0]?.refreshes, before + 1);
 });

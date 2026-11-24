@@ -2,10 +2,14 @@ import * as vscode from "vscode";
 import { activateExtension } from "./extension/activate";
 import type {
   VsCodeApi,
+  VsCollapsibleState,
   VsDiagnostic,
   VsDiagnosticCollection,
   VsSeverity,
   VsTextDocument,
+  VsTreeItem,
+  VsTreeProvider,
+  VsTreeView,
 } from "./extension/api";
 
 // The only file that imports vscode for value. Everything it teaches the rest of
@@ -17,6 +21,44 @@ const SEVERITY: Record<VsSeverity, vscode.DiagnosticSeverity> = {
   warning: vscode.DiagnosticSeverity.Warning,
   info: vscode.DiagnosticSeverity.Information,
 };
+
+const COLLAPSIBLE: Record<VsCollapsibleState, vscode.TreeItemCollapsibleState> = {
+  none: vscode.TreeItemCollapsibleState.None,
+  collapsed: vscode.TreeItemCollapsibleState.Collapsed,
+  expanded: vscode.TreeItemCollapsibleState.Expanded,
+};
+
+function toTreeItem(item: VsTreeItem): vscode.TreeItem {
+  const result = new vscode.TreeItem(item.label, COLLAPSIBLE[item.collapsibleState]);
+  if (item.description !== undefined) result.description = item.description;
+  if (item.tooltip !== undefined) result.tooltip = item.tooltip;
+  if (item.iconId !== undefined) result.iconPath = new vscode.ThemeIcon(item.iconId);
+  return result;
+}
+
+function createTreeView<Item>(id: string, provider: VsTreeProvider<Item>): VsTreeView {
+  const changed = new vscode.EventEmitter<Item | undefined>();
+  const view = vscode.window.createTreeView(id, {
+    treeDataProvider: {
+      onDidChangeTreeData: changed.event,
+      getChildren: (item?: Item) => [...provider.getChildren(item)],
+      getTreeItem: (item: Item) => toTreeItem(provider.getTreeItem(item)),
+    },
+    showCollapseAll: true,
+  });
+
+  return {
+    refresh: () => changed.fire(undefined),
+    setMessage: (text) => {
+      view.message = text;
+    },
+    dispose: () => {
+      view.dispose();
+      changed.dispose();
+    },
+  };
+}
+
 
 function toVscodeDiagnostic(diagnostic: VsDiagnostic): vscode.Diagnostic {
   const { start, end } = diagnostic.range;
@@ -50,6 +92,7 @@ function adapter(): VsCodeApi {
   return {
     createOutputChannel: (name) => vscode.window.createOutputChannel(name),
     createDiagnosticCollection,
+    createTreeView,
     registerCommand: (id, run) => vscode.commands.registerCommand(id, run),
     onDidOpenTextDocument: (listener) =>
       vscode.workspace.onDidOpenTextDocument((document) => listener(document)),

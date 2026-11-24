@@ -60,9 +60,34 @@ export interface VsContentProvider extends VsDisposable {
   refresh(uri: string): void;
 }
 
+export type VsCollapsibleState = "none" | "collapsed" | "expanded";
+
+// The parts of vscode.TreeItem the trace tree fills in. iconId is a ThemeIcon
+// id such as "error", not a file path.
+export interface VsTreeItem {
+  readonly label: string;
+  readonly description?: string;
+  readonly tooltip?: string;
+  readonly collapsibleState: VsCollapsibleState;
+  readonly iconId?: string;
+}
+
+export interface VsTreeProvider<Item> {
+  getChildren(item?: Item): readonly Item[];
+  getTreeItem(item: Item): VsTreeItem;
+}
+
+// A tree the editor renders from our model. refresh() re-asks the provider, and
+// setMessage is the muted summary line under the view.
+export interface VsTreeView extends VsDisposable {
+  refresh(): void;
+  setMessage(text: string): void;
+}
+
 export interface VsCodeApi {
   createOutputChannel(name: string): VsOutputChannel;
   createDiagnosticCollection(name: string): VsDiagnosticCollection;
+  createTreeView<Item>(id: string, provider: VsTreeProvider<Item>): VsTreeView;
   registerCommand(id: string, run: () => void | Promise<void>): VsDisposable;
   onDidOpenTextDocument(listener: (document: VsTextDocument) => void): VsDisposable;
   onDidChangeTextDocument(
