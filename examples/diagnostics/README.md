@@ -19,5 +19,5 @@ block comment escaped the reader as a crash, so the extension logged it to its
 output channel and the learner saw a clean file. That is fixed, and
 `reader-unterminated-block-comment.lisp` is the file that proves it.
 
-The files are outside `lisp_test_files/` and the CPS305 corpus on purpose, so
-they do not change the corpus diagnostics count.
+The files are outside `lisp_test_files/` on purpose, so they do not change the
+corpus diagnostics count.

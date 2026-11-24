@@ -35,7 +35,7 @@ Tests: **819** across fourteen suites — 73 reader, 101 analyze, 317 interprete
 trace, 24 trace-cases, 9 trace-tree, 10 value-hints, 39 extension.
 
 Corpus (the manual check, no committed script): **63 files**, 26 under
-`lisp_test_files/` and 37 from a local CPS305 corpus (skip `backup/`),
+`lisp_test_files/` and 37 from a local lab corpus (skip `backup/`),
 89 KB. `analyze` reports **31 diagnostics**: 10 on learner code, 2 deliberate on
 `bracket_imbalance.lisp`, and 19 deliberate on the bracket-mismatch fixtures.
 8 files produce a trace frame and 13 produce a value hint once the `;;[trace]`

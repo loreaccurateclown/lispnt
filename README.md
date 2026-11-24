@@ -101,7 +101,7 @@ npm run bench      # timings over the fixtures, LISP_CORPUS if set, and a size l
 this folder starts an Extension Development Host with Lispnt loaded
 (`.vscode/launch.json`).
 
-Measured with a local CPS305 folder set through `LISP_CORPUS` (63 files, 87.3 KB):
+Measured with an additional folder set through `LISP_CORPUS` (63 files, 87.3 KB):
 parsing takes 1.9 ms, analysis 8.8 ms,
 value hints 11.4 ms and tracing 0.6 ms in total. The largest file, 19.6 KB,
 analyses in 1.9 ms. Hint runs are the part that does not scale linearly — 1.2 ms
