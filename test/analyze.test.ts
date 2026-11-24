@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { analyze } from "../src/core/analyze";
 
 //LLM-written tests
@@ -369,4 +371,43 @@ test("keeps a runtime type error next to a name check", () => {
     diagnostics.map((diagnostic) => diagnostic.code),
     ["type-error", "undefined-function"],
   );
+});
+
+// The showcase files are what a learner opens to see each mark in the editor, so
+// a change in what they report means the demonstration has drifted.
+test("the diagnostic showcase still demonstrates what it claims", () => {
+  const directory = join(process.cwd(), "examples", "diagnostics");
+  const expected: Record<string, readonly string[]> = {
+    "reader-stray-closer.lisp": ["stray-closer"],
+    "reader-unterminated-list.lisp": ["unterminated-list"],
+    "reader-unterminated-string.lisp": ["unterminated-string"],
+    "reader-unexpected-eof.lisp": ["unexpected-eof"],
+    "reader-dotted-tail.lisp": ["dotted-tail-extra-form", "stray-closer"],
+    "shapes.lisp": [
+      "defun-name",
+      "defun-arglist",
+      "lambda-arglist",
+      "local-definitions",
+      "local-definition",
+      "let-bindings",
+      "unbound-variable",
+    ],
+    "runtime.lisp": [
+      "type-error",
+      "index-error",
+      "division-by-zero",
+      "not-a-place",
+      "malformed-form",
+      "signalled-error",
+      "arity",
+    ],
+    "names.lisp": ["unbound-variable", "undefined-function", "variable-as-function"],
+    "quiet.lisp": [],
+  };
+
+  for (const [file, codes] of Object.entries(expected)) {
+    const source = readFileSync(join(directory, file), "utf8");
+    const found = analyze(source).map((diagnostic) => diagnostic.code);
+    assert.deepEqual(found.sort(), [...codes].sort(), file);
+  }
 });
