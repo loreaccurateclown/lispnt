@@ -46,6 +46,15 @@ hints, 39 trace, 21 trace-cases).
 - **M7 — Prettier-style formatter for Lisp.** Automated, opinionated re-indentation and layout of Common Lisp source. Optional; only after M1–M6 are complete.
 - **Benchmarks.** After M1–M6, a benchmark pass to put numbers on parse and evaluate cost (file size vs. time), so design tradeoffs have evidence rather than intuition.
 
+## Agent working rules
+
+Added after a diagnosis ran for twenty-five minutes without a status line. They apply to any agent session in this repository, including after a handoff rewrite.
+
+- **A command with no result after three minutes is killed and reported** — what was run, what was seen, and the smallest next question. No third attempt at the same thing.
+- **A test run past about twice the baseline is a hang, not a wait.** The full suite runs in under a minute; two minutes is the point to stop. A hang that survives two hypotheses gets handed back as a question, not a third hypothesis.
+- **No silent investigation longer than three minutes**, even mid-diagnosis. A status line costs nothing; a quarter of an hour of quiet does not.
+- **Bisection is the accepted technique** for a hang — split the suite, then the file, then the batch, and report which slice hangs. The method was never the problem; running it without checkpoints was.
+
 ## Learning notes
 
 - Superseded implementations are kept as commented "monuments" in `src/core/reader.ts` on purpose — this is a learning project, and they document assumptions that didn't hold.
