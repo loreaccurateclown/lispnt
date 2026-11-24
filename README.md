@@ -36,8 +36,10 @@ What it finds today:
   arguments, the operand count of the common special forms, a LET binding list,
   DO clauses, DOTIMES/DOLIST specs and a LABELS entry. The mark only moves when a
   form inside the recovered complaint starts its own line — the shape a swallowed
-  sibling leaves — so a form that was already malformed keeps the plain unclosed
-  message. A missing closer also
+  sibling leaves. If the unclosed form is itself a LET whose binding list is
+  wrong, one message gives the double-bracket repair first and the missing closer
+  after it: writing `((x 0))` in `(let (x 0)` is still the first thing to fix. A
+  missing closer also
   swallows the rest of the file, so names defined after it would look undefined;
   those warnings are dropped when the file's own recovered text defines the
   name, while warnings the file really has stay.

@@ -95,7 +95,8 @@ export function analyze(source: string): Diagnostic[] {
   const repaired =
     missingCloser === undefined
       ? undefined
-      : bracketMismatch(missingCloser, recovered);
+      : (bracketMismatch(missingCloser, recovered) ??
+        unclosedBindingMismatch(missingCloser, recovered, source));
 
   for (const error of readerErrors) {
     diagnostics.push(
@@ -193,6 +194,8 @@ export function analyze(source: string): Diagnostic[] {
 interface RecoveredParse {
   readonly forms: AstNode[];
   readonly source: string;
+  // The real text ends here; anything after it is the closers this run supplied.
+  readonly originalLength: number;
 }
 
 interface Span {
@@ -218,7 +221,7 @@ function recoveredParse(
     forms.push(result.node);
   }
 
-  return { forms, source: padded };
+  return { forms, source: padded, originalLength: source.length };
 }
 
 // A missing closer can make a form swallow its sibling. The recovered read shows
@@ -290,12 +293,57 @@ function bracketMismatch(
   // (let (x 0), one closer short, still has a bindings mistake — so the
   // unclosed-form mark is the honest one there.
   const evidence =
-    hasLineStartInside(recovered.source, span) ||
+    hasLineStartInside(recovered.source, span, recovered.originalLength) ||
     (candidate.code === "local-definition" &&
       startsLine(recovered.source, span.position.offset));
   if (!evidence) return undefined;
 
   return describeBracketMismatch(candidate, recovered.forms, span);
+}
+
+// The unclosed form can be the very form whose bindings are wrong: `(let (x 0)`
+// with no final closer is one `)` short and also missing the brackets around the
+// pair. The recovered read knows the second fact, so the message states both
+// instead of hiding the binding repair behind the unclosed mark.
+function unclosedBindingMismatch(
+  error: ReaderError,
+  recovered: RecoveredParse | null,
+  source: string,
+): Diagnostic | undefined {
+  const openForms = error.openForms ?? [];
+  const open = openForms[0];
+  if (recovered === null || openForms.length !== 1 || open === undefined)
+    return undefined;
+
+  const head = formHeadAt(source, open.position.offset, open.headEnd);
+  if (head !== "LET" && head !== "LET*") return undefined;
+
+  // The complaint whose form starts at the unclosed opener is about that form.
+  const candidate = checkForms(recovered.forms, recovered.source).find(
+    (diagnostic) =>
+      diagnostic.code === "let-binding" &&
+      diagnostic.position.offset === error.position.offset,
+  );
+  if (candidate === undefined) return undefined;
+
+  const closes = `The ${head} also never closes: the file ends ${openForms.length} \`)\` short.`;
+  return {
+    code: "bracket-mismatch",
+    severity: "error",
+    message: `${candidate.message} ${closes}`,
+    position: open.position,
+    ...(open.headEnd === undefined ? {} : { end: open.headEnd }),
+  };
+}
+
+function formHeadAt(
+  source: string,
+  start: number,
+  headEnd: Position | undefined,
+): string | undefined {
+  const raw = source.slice(start + 1, headEnd?.offset ?? start + 2);
+  const word = raw.trim().split(/\s+/)[0];
+  return word === undefined || word === "" ? undefined : word.toUpperCase();
 }
 
 // The arity complaint points at the called name; the form to mark is the call.
@@ -314,15 +362,26 @@ function spanForCandidate(
     : { position: candidate.position, end: candidate.end };
 }
 
-function hasLineStartInside(source: string, span: Span): boolean {
+function hasLineStartInside(
+  source: string,
+  span: Span,
+  limit: number,
+): boolean {
   if (span.end === undefined) return false;
-  for (let offset = span.position.offset + 1; offset < span.end.offset; offset++) {
+  const end = Math.min(span.end.offset, limit);
+  for (let offset = span.position.offset + 1; offset < end; offset++) {
     if (startsLine(source, offset)) return true;
   }
   return false;
 }
 
 function startsLine(source: string, offset: number): boolean {
+  const here = source[offset];
+  if (here === undefined) return false;
+  // Only a token starts a line; the newline and the indentation do not.
+  if (here === " " || here === "\t" || here === "\r" || here === "\n")
+    return false;
+
   let at = offset - 1;
   while (at >= 0 && (source[at] === " " || source[at] === "\t")) at -= 1;
   return at < 0 || source[at] === "\n" || source[at] === "\r";
@@ -591,3 +650,4 @@ function withoutHiddenNameWarnings(
     return recovered !== null && !recovered.has(diagnostic.name);
   });
 }
+

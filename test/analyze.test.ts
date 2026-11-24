@@ -177,6 +177,29 @@ test("keeps the unclosed form as the mark when the recovered read is clean", () 
   assert.deepEqual(spanOf(diagnostic), [5, 1, 5, 7]);
 });
 
+// The unclosed form can be the very LET whose bindings are wrong: the double
+// brackets the learner needs and the missing closer share one message, with the
+// repair first so it is the thing acted on.
+test("reports the double brackets and the missing closer together", () => {
+  const [diagnostic] = analyze(
+    bracketFixture("pending/let-double-brackets.lisp"),
+  );
+
+  assert.equal(diagnostic?.code, "bracket-mismatch");
+  assert.equal(
+    diagnostic?.message,
+    "LET bindings need a pair of brackets each: write `((x 0))` so `X` is bound to `0`. As written, LET reads `X`, then takes `0` as a second binding, which fails. The LET also never closes: the file ends 1 `)` short.",
+  );
+  assert.deepEqual(spanOf(diagnostic), [7, 1, 7, 5]);
+});
+
+test("keeps the plain unclosed message when the LET bindings are fine", () => {
+  for (const source of ["(let ((x 0))", "(let (x)", "(defun f (x) x"]) {
+    const [diagnostic] = analyze(source);
+    assert.equal(diagnostic?.code, "unterminated-list", source);
+  }
+});
+
 // The other forms a deleted closer can break. Each fixture is one swallow, and
 // the recovered read names the form that swallowed its sibling.
 const moreBracketCases: readonly {
