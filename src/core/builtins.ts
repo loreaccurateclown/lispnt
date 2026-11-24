@@ -281,8 +281,48 @@ register("EQUAL", 2, 2, (args) =>
   isEqual(args[0]!, args[1]!) ? intern("T") : NIL,
 );
 register("EQUALP", 2, 2, (args) =>
-  isEqual(args[0]!, args[1]!) ? intern("T") : NIL,
-); //in a modern language this ends up more or less being the same it seems
+  isEqualP(args[0]!, args[1]!) ? intern("T") : NIL,
+);
+
+// EQUALP descends where EQUAL does not: numbers by value, characters and strings
+// ignoring case, conses recursively, arrays element by element up to the fill
+// pointer, structures of the same type slot by slot. Hash tables compare by
+// identity, as CL specifies.
+function isEqualP(left: LispValue, right: LispValue): boolean {
+  if (left === right) return true;
+
+  if (left.kind === "number" && right.kind === "number")
+    return left.value === right.value;
+  if (left.kind === "char" && right.kind === "char")
+    return left.value.toLowerCase() === right.value.toLowerCase();
+  if (left.kind === "string" && right.kind === "string")
+    return left.value.toLowerCase() === right.value.toLowerCase();
+  if (left.kind === "cons" && right.kind === "cons")
+    return isEqualP(left.car, right.car) && isEqualP(left.cdr, right.cdr);
+
+  if (left.kind === "array" && right.kind === "array") {
+    const length = arrayLength(left);
+    if (length !== arrayLength(right)) return false;
+    for (let index = 0; index < length; index += 1) {
+      const a = left.elements[index];
+      const b = right.elements[index];
+      if (a === undefined || b === undefined || !isEqualP(a, b)) return false;
+    }
+    return true;
+  }
+
+  if (left.kind === "struct" && right.kind === "struct") {
+    if (left.type !== right.type) return false;
+    if (left.slots.size !== right.slots.size) return false;
+    for (const [name, value] of left.slots) {
+      const other = right.slots.get(name);
+      if (other === undefined || !isEqualP(value, other)) return false;
+    }
+    return true;
+  }
+
+  return false;
+}
 
 register("/", 1, null, (args) => {
   //division. not too sure since Lisp does division Weirdly

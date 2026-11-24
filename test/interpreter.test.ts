@@ -444,6 +444,48 @@ test("distinguishes equal from eq on lists", () => {
   assert.ok(isNil(run("(eq '(1 2) '(1 2))")));
 });
 
+// EQUALP descends where EQUAL does not. Verified against SBCL: strings and
+// characters compare case-insensitively, lists and arrays elementwise,
+// structures of the same type slot by slot, and hash tables by identity.
+test("equalp ignores case in strings and characters", () => {
+  assert.deepEqual(evalIn("(equalp \"abc\" \"ABC\")"), intern("T"));
+  assert.deepEqual(evalIn("(equalp #\\a #\\A)"), intern("T"));
+  assert.ok(isNil(evalIn("(equalp #\\a #\\b)")));
+  assert.ok(isNil(evalIn("(equal \"abc\" \"ABC\")")));
+});
+
+test("equalp descends into lists and arrays", () => {
+  assert.deepEqual(
+    evalIn("(equalp '(1 2 (3 \"x\")) '(1 2 (3 \"X\")))"),
+    intern("T"),
+  );
+  assert.ok(isNil(evalIn("(equalp '(1 2) '(1 2 3))")));
+  assert.deepEqual(evalIn("(equalp #(1 2) #(1 2))"), intern("T"));
+  assert.ok(isNil(evalIn("(equalp #(1 2) #(1 3))")));
+  assert.deepEqual(evalIn("(equalp 1 1.0)"), intern("T"));
+});
+
+test("equalp compares structures of one type slot by slot", () => {
+  assert.deepEqual(
+    evalIn("(defstruct p x y) (equalp (make-p :x 1 :y 2) (make-p :x 1 :y 2))"),
+    intern("T"),
+  );
+  assert.ok(
+    isNil(evalIn("(defstruct p x y) (equalp (make-p :x 1 :y 2) (make-p :x 1 :y 3))")),
+  );
+  assert.ok(
+    isNil(evalIn("(defstruct p x) (defstruct q x) (equalp (make-p :x 1) (make-q :x 1))")),
+  );
+});
+
+test("equalp keeps hash tables by identity", () => {
+  assert.deepEqual(
+    evalIn("(let ((table (make-hash-table))) (equalp table table))"),
+    intern("T"),
+  );
+  assert.ok(isNil(evalIn("(equalp (make-hash-table) (make-hash-table))")));
+});
+
 test("takes the head and tail of a list", () => {
   assert.deepEqual(run("(car '(1 2))"), num(1));
   assert.deepEqual(run("(cdr '(1 2))"), cons(num(2), NIL));
