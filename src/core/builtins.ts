@@ -11,6 +11,7 @@ import {
   isNil,
   LispValue,
   NIL,
+  StreamValue,
 } from "./values";
 
 export const builtins = new Map<string, BuiltInValue>(); //needed to assign a new map, not just map
@@ -62,6 +63,19 @@ export function expectCharValue(value: LispValue): string {
   if (value.kind !== "char")
     throw new LispEvalError("type-error", null, `expected a character, got ${value.kind}`);
   return value.value;
+}
+
+export function expectStream(value: LispValue): StreamValue {
+  if (value.kind !== "stream")
+    throw new LispEvalError("type-error", null, `expected a stream, got ${value.kind}`);
+  return value;
+}
+
+// With no stream argument there is nowhere to write, so the text is discarded
+// and the call still returns its object, as CL's princ does.
+function writeTo(stream: LispValue | undefined, text: string): void {
+  if (stream === undefined || isNil(stream)) return;
+  expectStream(stream).chunks.push(text);
 }
 
 export function expectHashTable(value: LispValue): HashTableValue {
@@ -177,7 +191,11 @@ register("LIST", 0, null, (args) => listFrom(args));
 register("LENGTH", 1, 1, (args) => {
   const value = args[0]!;
   const size =
-    value.kind === "array" ? value.elements.length : consForm(value).length;
+    value.kind === "array"
+      ? value.elements.length
+      : value.kind === "string"
+        ? value.value.length
+        : consForm(value).length;
   return {
     kind: "number",
     value: size,
@@ -256,6 +274,11 @@ register("ELT", 2, 2, (args) => {
   const at = expectInteger(args[1]!);
   const sequence = args[0]!;
   if (sequence.kind === "array") return sequence.elements[at] ?? NIL;
+  // A string is a sequence of characters.
+  if (sequence.kind === "string")
+    return at >= 0 && at < sequence.value.length
+      ? { kind: "char", value: [...sequence.value][at]! }
+      : NIL;
   return consForm(sequence)[at] ?? NIL;
 });
 
@@ -445,6 +468,7 @@ const typePredicates = new Map<string, (value: LispValue) => boolean>([
   ["SYMBOL", (value) => value.kind === "symbol" || isNil(value)],
   ["KEYWORD", (value) => value.kind === "symbol" && value.name.startsWith(":")],
   ["HASH-TABLE", (value) => value.kind === "hash"],
+  ["STREAM", (value) => value.kind === "stream"],
   ["NUMBER", (value) => value.kind === "number"],
   ["INTEGER", (value) => value.kind === "number" && Number.isInteger(value.value)],
   ["RATIONAL", (value) => value.kind === "number" && Number.isInteger(value.value)],
@@ -711,9 +735,47 @@ register("FORMAT", 2, null, (args) => {
     return NIL;
   }
 
+  if (destination.kind === "stream") {
+    destination.chunks.push(formatText(control, args.slice(2)));
+    return NIL;
+  }
+
   throw new LispEvalError(
     "unsupported-standard",
     null,
-    "FORMAT: only NIL and T are implemented as destinations",
+    "FORMAT: only NIL, T and a string output stream are implemented as destinations",
   );
 });
+
+// Writing: a string output stream collects text until with-output-to-string
+// returns it. Without a stream, the text is discarded — Lispnt has no console.
+register("WRITE-CHAR", 1, 2, (args) => {
+  writeTo(args[1], expectCharValue(args[0]!));
+  return args[0]!;
+});
+
+register("WRITE-STRING", 1, 2, (args) => {
+  writeTo(args[1], expectStringValue(args[0]!));
+  return args[0]!;
+});
+
+register("PRINC", 1, 2, (args) => {
+  writeTo(args[1], printValue(args[0]!, { princ: true }));
+  return args[0]!;
+});
+
+register("PRIN1", 1, 2, (args) => {
+  writeTo(args[1], printValue(args[0]!));
+  return args[0]!;
+});
+
+register("PRINC-TO-STRING", 1, 1, (args) => ({
+  kind: "string",
+  value: printValue(args[0]!, { princ: true }),
+}));
+
+register("PRIN1-TO-STRING", 1, 1, (args) => ({
+  kind: "string",
+  value: printValue(args[0]!),
+}));
+

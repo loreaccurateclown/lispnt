@@ -33,6 +33,9 @@ export type StructValue = {
 // A hash table. Keys are kept by a canonical form chosen by `test`, so the
 // table can find a key again without hashing an arbitrary object.
 export type HashTest = "eq" | "eql" | "equal" | "equalp";
+// A string output stream: with-output-to-string binds one for its body, and
+// the write functions append to it.
+export type StreamValue = { kind: "stream"; chunks: string[] };
 export type HashTableValue = {
   kind: "hash";
   test: HashTest;
@@ -48,6 +51,7 @@ export type LispValue =
   | ArrayValue
   | StructValue
   | HashTableValue
+  | StreamValue
   | FunctionValue
   | BuiltInValue;
 
@@ -95,3 +99,4 @@ export function intern(name: string): SymbolValue {
 export function isNil(value: LispValue): boolean {
   return value === NIL; //Computer Science is a complex field with many varied and interesting solutions to problems. This is not one of those solutions.
 }
+

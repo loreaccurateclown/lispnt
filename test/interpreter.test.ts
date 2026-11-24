@@ -1671,3 +1671,89 @@ test("refuses a destination that is not NIL or T", () => {
     return error instanceof LispEvalError && error.code === "unsupported-standard";
   });
 });
+
+//LLM-written tests for output streams
+test("collects write-string output", () => {
+  assert.deepEqual(
+    evalIn('(with-output-to-string (out) (write-string "abc" out))'),
+    { kind: "string", value: "abc" },
+  );
+});
+
+test("collects write-char output", () => {
+  assert.equal(
+    printValueOf("(with-output-to-string (out) (write-char #\\x out) (write-char #\\y out))"),
+    '"xy"',
+  );
+});
+
+test("returns an empty string for an empty body", () => {
+  assert.deepEqual(evalIn("(with-output-to-string (out))"), { kind: "string", value: "" });
+});
+
+test("keeps the stream variable out of the enclosing scope", () => {
+  assert.throws(
+    () => evalIn('(with-output-to-string (out) (write-string "a" out)) out'),
+    (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "unbound-variable";
+    },
+  );
+});
+
+test("writes princ and prin1 forms and their to-string variants", () => {
+  assert.equal(printValueOf('(with-output-to-string (out) (princ "s" out))'), '"s"');
+  assert.equal(printValueOf('(with-output-to-string (out) (prin1 "s" out))'), '"\\"s\\""');
+  assert.equal(printValueOf('(princ-to-string "s")'), '"s"');
+  assert.equal(printValueOf('(prin1-to-string "s")'), '"\\"s\\""');
+  assert.equal(printValueOf("(princ-to-string #\\a)"), '"a"');
+  assert.equal(printValueOf("(prin1-to-string #\\a)"), '"#\\\\a"');
+});
+
+test("returns the written object from princ, prin1 and write", () => {
+  assert.deepEqual(evalIn('(princ "s")'), { kind: "string", value: "s" });
+  assert.deepEqual(evalIn("(write-char #\\a)"), { kind: "char", value: "a" });
+  assert.deepEqual(evalIn('(write-string "s")'), { kind: "string", value: "s" });
+});
+
+test("formats into a stream", () => {
+  assert.equal(
+    printValueOf('(with-output-to-string (out) (format out "~a=~d" (quote k) 2))'),
+    '"K=2"',
+  );
+});
+
+test("answers typep for a stream", () => {
+  assert.equal(
+    printValueOf('(with-output-to-string (out) (write-string (if (typep out (quote stream)) "y" "n") out))'),
+    '"y"',
+  );
+});
+
+test("rejects a wrong argument type for the write functions", () => {
+  for (const source of [
+    "(with-output-to-string (out) (write-char 5 out))",
+    "(with-output-to-string (out) (write-string 5 out))",
+    '(with-output-to-string (out) (write-string "x" 5))',
+  ]) {
+    assert.throws(() => evalIn(source), (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "type-error";
+    }, source);
+  }
+});
+
+test("builds the corpus upper-string", () => {
+  const source = [
+    "(defun upper (s)",
+    "(with-output-to-string (out)",
+    "(dotimes (i (length s))",
+    "(write-char (char-upcase (schar s i)) out))))",
+    '(upper "abc")',
+  ].join(" ");
+  assert.equal(printValueOf(source), '"ABC"');
+});
+
+test("measures a string and reads its elements", () => {
+  assert.deepEqual(evalIn('(length "abc")'), num(3));
+  assert.deepEqual(evalIn('(elt "abc" 1)'), { kind: "char", value: "b" });
+  assert.deepEqual(evalIn('(elt "abc" 9)'), NIL);
+});

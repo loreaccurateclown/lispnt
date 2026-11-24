@@ -11,6 +11,7 @@ import {
   ConsValue,
   BuiltInValue,
   StructValue,
+  StreamValue,
 } from "./values";
 import type { AstNode, AtomNode, ListNode, Position } from "./reader";
 import {
@@ -135,6 +136,7 @@ export const SPECIAL_FORMS: ReadonlySet<string> = new Set([
   "ECASE",
   "CCASE",
   "LOOP",
+  "WITH-OUTPUT-TO-STRING",
   "DEFPARAMETER",
   "DEFVAR",
   "DEFSTRUCT",
@@ -315,6 +317,8 @@ function evaluateInner(node: AstNode, env: Env): LispValue {
         return evalCase(node, env, true);
       case "LOOP":
         return evalLoop(node, env);
+      case "WITH-OUTPUT-TO-STRING":
+        return evalWithOutputStream(node, env);
       case "RETURN":
         return evalReturn(node, env);
       case "PUSH":
@@ -1541,6 +1545,33 @@ function listToValue(items: LispValue[]): LispValue {
   return result;
 }
 
+
+// WITH-OUTPUT-TO-STRING binds a string output stream for the body and returns
+// everything the write functions appended to it.
+function evalWithOutputStream(form: ListNode, env: Env): LispValue {
+  const binding = form.children[1];
+  if (binding === undefined || binding.kind !== "list" || binding.children[0] === undefined)
+    throw new LispEvalError(
+      "malformed-form",
+      form.start,
+      "with-output-to-string needs (variable) before its body",
+    );
+
+  const name = symbolName(binding.children[0]);
+  if (name === undefined)
+    throw new LispEvalError(
+      "malformed-form",
+      form.start,
+      "with-output-to-string needs a variable name",
+    );
+
+  const stream: StreamValue = { kind: "stream", chunks: [] };
+  const scope = createEnv(env);
+  define(scope, name, stream);
+  evaluateBody(form.children.slice(2), scope);
+
+  return { kind: "string", value: stream.chunks.join("") };
+}
 function evalDefParameter(form: ListNode, env: Env): LispValue {
   const nameNode = form.children[1];
 
@@ -1889,6 +1920,7 @@ export function astToValue(node: AstNode): LispValue {
     seed,
   );
 }
+
 
 
 

@@ -304,3 +304,7 @@ test("renders princ-style when asked", () => {
   assert.equal(printValue({ kind: "char", value: "a" }, { princ: true }), "a");
   assert.equal(printValue(list(str("a")), { princ: true }), "(a)");
 });
+
+test("prints a string output stream", () => {
+  assert.equal(printValue({ kind: "stream", chunks: ["ab"] }), "#<string-output-stream>");
+});

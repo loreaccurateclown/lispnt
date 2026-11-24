@@ -53,6 +53,8 @@ function render(value: LispValue, depth: number, state: PrintState): string {
       return renderStruct(value, depth, state);
     case "hash":
       return `#<hash-table :count ${value.entries.size}>`;
+    case "stream":
+      return "#<string-output-stream>";
   }
 }
 
@@ -150,3 +152,4 @@ function renderStruct(
   const rendered = parts.length === 0 ? "" : ` ${parts.join(" ")}`;
   return `#S(${value.type}${rendered})`;
 }
+
