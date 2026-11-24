@@ -347,3 +347,13 @@ test("checks the argument count of a builtin it now implements", () => {
   assert.deepEqual(codes("(defun f (x) (schar x))"), ["arity"]);
   assert.deepEqual(codes("(defun f () (1+ 1))"), []);
 });
+
+test("checks a defstruct slot default", () => {
+  assert.deepEqual(codes("(defstruct s (x (nope)))"), ["undefined-function"]);
+});
+
+test("checks the value form of multiple-value-setq", () => {
+  const found = codes("(multiple-value-setq (a b) (missing-fn))");
+
+  assert.ok(found.includes("undefined-function"));
+});

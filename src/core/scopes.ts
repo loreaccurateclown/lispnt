@@ -95,6 +95,12 @@ export function walkWithScopes(
       case "DEFUN":
         visitDefun(node, current);
         return;
+      case "DEFSTRUCT":
+        visitDefstruct(node, current);
+        return;
+      case "MULTIPLE-VALUE-SETQ":
+        visitMultipleValueSetq(node, current);
+        return;
       case "LAMBDA":
         visitLambda(node, current);
         return;
@@ -188,6 +194,27 @@ export function walkWithScopes(
     for (const form of node.children.slice(3)) visit(form, inner);
   }
 
+  // DEFSTRUCT's header names a type and its options, which are names rather than
+  // code; the slot defaults are ordinary expressions, so an undefined name in one
+  // is worth reporting like any other use.
+  function visitDefstruct(node: ListNode, current: Scope): void {
+    for (const slotNode of node.children.slice(2)) {
+      if (slotNode.kind !== "list") continue;
+      const defaultNode = slotNode.children[1];
+      if (defaultNode !== undefined) visit(defaultNode, current);
+    }
+  }
+
+  // MULTIPLE-VALUE-SETQ assigns existing names, so its targets are uses like
+  // SETQ's, and its value form is code that has to be checked.
+  function visitMultipleValueSetq(node: ListNode, current: Scope): void {
+    const namesNode = node.children[1];
+    if (namesNode !== undefined && namesNode.kind === "list") {
+      for (const name of namesNode.children) visit(name, current);
+    }
+    const valueNode = node.children[2];
+    if (valueNode !== undefined) visit(valueNode, current);
+  }
   function visitLambda(node: ListNode, current: Scope): void {
     const parameters = parameterNodes(node.children[1]);
     const inner = withParameters(current, parameters, visit);
@@ -958,7 +985,6 @@ const LOOP_CODE_KEYWORDS: ReadonlySet<string> = new Set([
 // keywords would otherwise be read as ordinary code, so the walk stops here.
 // Each entry is a candidate for decoding later; until then its body is unchecked.
 export const OPAQUE_FORMS: ReadonlySet<string> = new Set([
-  "DEFSTRUCT",
   "DEFCLASS",
   "DEFGENERIC",
   "DEFMETHOD",
@@ -967,7 +993,6 @@ export const OPAQUE_FORMS: ReadonlySet<string> = new Set([
   "DEFPACKAGE",
   "WITH-SLOTS",
   "WITH-ACCESSORS",
-  "MULTIPLE-VALUE-SETQ",
   "HANDLER-BIND",
   "RESTART-CASE",
   "MACROLET",
