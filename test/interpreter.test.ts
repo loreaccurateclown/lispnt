@@ -1757,3 +1757,78 @@ test("measures a string and reads its elements", () => {
   assert.deepEqual(evalIn('(elt "abc" 1)'), { kind: "char", value: "b" });
   assert.deepEqual(evalIn('(elt "abc" 9)'), NIL);
 });
+
+//LLM-written tests for GETF, SORT and STRING<
+test("reads a property list and honours a default", () => {
+  assert.deepEqual(evalIn("(getf (list :a 1 :b 2) :b)"), num(2));
+  assert.deepEqual(evalIn("(getf (list :a 1) :z)"), NIL);
+  assert.deepEqual(evalIn("(getf (list :a 1) :z 'fallback)"), intern("FALLBACK"));
+  assert.deepEqual(evalIn("(getf nil :a)"), NIL);
+});
+
+test("assigns through the getf place, replacing or prepending", () => {
+  const replace = "(setf pl (list :a 1)) (setf (getf pl :a) 9) (getf pl :a)";
+  assert.deepEqual(evalIn(replace), num(9));
+
+  const prepend = "(setf pl (list :a 1)) (setf (getf pl :b) 2) (list pl (getf pl :b))";
+  assert.equal(printValueOf(prepend), "((:B 2 :A 1) 2)");
+});
+
+test("rejects a plist that is not a list", () => {
+  assert.throws(() => evalIn("(getf 5 :a)"), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "type-error";
+  });
+});
+
+test("starts an incf on a gethash place from its default", () => {
+  const source = [
+    "(setf h (make-hash-table))",
+    "(incf (gethash 'a h 0))",
+    "(incf (gethash 'a h 0))",
+    "(gethash 'a h)",
+  ].join(" ");
+  assert.deepEqual(evalIn(source), num(2));
+});
+
+test("sorts a list and a vector, leaving the input alone", () => {
+  const predicate = "(lambda (a b) (< a b))";
+  assert.equal(printValueOf(`(sort (list 3 1 2) ${predicate})`), "(1 2 3)");
+  assert.equal(printValueOf(`(sort #(3 1 2) ${predicate})`), "#(1 2 3)");
+  assert.equal(
+    printValueOf(`(let ((l (list 3 1 2))) (sort l ${predicate}) l)`),
+    "(3 1 2)",
+  );
+});
+
+test("sorts strings and symbol keys through a designator comparison", () => {
+  assert.equal(printValueOf('(sort (list "b" "a") (function string<))'), '("a" "b")');
+  assert.equal(printValueOf("(sort (list 'b 'a) (function string<))"), "(A B)");
+});
+
+test("rejects sorting something that is not a sequence", () => {
+  assert.throws(
+    () => evalIn("(sort 5 (lambda (a b) (< a b)))"),
+    (error: unknown) => {
+      return error instanceof LispEvalError && error.code === "type-error";
+    },
+  );
+});
+
+test("compares strings and string designators", () => {
+  assert.deepEqual(evalIn('(string< "a" "b")'), intern("T"));
+  assert.deepEqual(evalIn('(string< "b" "a")'), NIL);
+  assert.deepEqual(evalIn('(string< "a" "a")'), NIL);
+  assert.deepEqual(evalIn("(string< 'a 'b)"), intern("T"));
+  assert.deepEqual(evalIn("(string< #\\a #\\b)"), intern("T"));
+});
+
+test("builds the corpus word-counts table by incf", () => {
+  const source = [
+    "(defun word-counts (words)",
+    "(let ((table (make-hash-table :test (function equal))))",
+    "(dolist (w words table) (incf (gethash w table 0))))",
+    ")",
+    "(gethash 'a (word-counts '(a b a)))",
+  ].join(" ");
+  assert.deepEqual(evalIn(source), num(2));
+});

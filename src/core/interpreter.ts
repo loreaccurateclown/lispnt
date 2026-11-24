@@ -20,6 +20,8 @@ import {
   consForm,
   expectCons,
   expectHashTable,
+  findProperty,
+  setProperty,
   expectNumber,
   hashTableKey,
   isEq,
@@ -412,6 +414,26 @@ export function resolvePlace(node: AstNode, env: Env): Place {
       const cell = expectConsPlace(node, env);
       return { get: () => cell.cdr, set: (value) => (cell.cdr = value) };
     }
+    case "GETF": {
+      const plistNode = node.children[1];
+      const indicatorNode = node.children[2];
+      const defaultNode = node.children[3];
+      if (plistNode === undefined || indicatorNode === undefined)
+        throw new LispEvalError(
+          "malformed-form",
+          node.start,
+          "GETF place needs a plist and an indicator",
+        );
+      const plistPlace = resolvePlace(plistNode, env);
+      const indicator = evaluate(indicatorNode, env);
+      const fallback = defaultNode === undefined ? NIL : evaluate(defaultNode, env);
+      return {
+        get: () => findProperty(plistPlace.get(), indicator)?.value ?? fallback,
+        set: (value: LispValue) => {
+          plistPlace.set(setProperty(plistPlace.get(), indicator, value));
+        },
+      };
+    }
     case "GETHASH": {
       const keyNode = node.children[1];
       const tableNode = node.children[2];
@@ -423,9 +445,13 @@ export function resolvePlace(node: AstNode, env: Env): Place {
         );
       const key = evaluate(keyNode, env);
       const table = expectHashTable(evaluate(tableNode, env));
+      const defaultNode = node.children[3];
+      // The default belongs to the place's read, which is what lets
+      // (incf (gethash key table 0)) start counting from zero.
+      const fallback = defaultNode === undefined ? NIL : evaluate(defaultNode, env);
       const canonical = hashTableKey(key, table.test);
       return {
-        get: () => table.entries.get(canonical)?.value ?? NIL,
+        get: () => table.entries.get(canonical)?.value ?? fallback,
         set: (value: LispValue) => {
           table.entries.set(canonical, { key, value });
         },
@@ -764,6 +790,49 @@ register("MAPHASH", 2, 2, (args) => {
   return NIL;
 });
 
+
+// SORT calls a comparator, so it lives here with FUNCALL and APPLY. CL's sort is
+// destructive; this one copies, so a recorded snapshot cannot change under a
+// hint, and JS's stable sort makes it stable where CL promises nothing.
+register("SORT", 2, 2, (args) => {
+  const sequence = args[0]!;
+  const predicate = args[1]!;
+
+  const compare = (left: LispValue, right: LispValue): number => {
+    if (isTruthy(callValue(predicate, [left, right]))) return -1;
+    if (isTruthy(callValue(predicate, [right, left]))) return 1;
+    return 0;
+  };
+
+  if (sequence.kind === "cons" || isNil(sequence)) {
+    const items = consForm(sequence).slice().sort(compare);
+    let result: LispValue = NIL;
+    for (let index = items.length - 1; index >= 0; index -= 1)
+      result = cons(items[index]!, result);
+    return result;
+  }
+
+  if (sequence.kind === "array")
+    return { kind: "array", elements: sequence.elements.slice().sort(compare) };
+
+  if (sequence.kind === "string") {
+    const characters = [...sequence.value].map<LispValue>((character) => ({
+      kind: "char",
+      value: character,
+    }));
+    characters.sort(compare);
+    return {
+      kind: "string",
+      value: characters.map((character) => (character as { value: string }).value).join(""),
+    };
+  }
+
+  throw new LispEvalError(
+    "type-error",
+    null,
+    `SORT: expected a sequence, got ${sequence.kind}`,
+  );
+});
 //helper for resolve place along with arrayAndIndex
 function expectConsPlace(form: ListNode, env: Env): ConsValue {
   const target = form.children[1];
@@ -1920,6 +1989,7 @@ export function astToValue(node: AstNode): LispValue {
     seed,
   );
 }
+
 
 
 

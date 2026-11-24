@@ -40,7 +40,7 @@ export const STANDARD_SYMBOLS: ReadonlySet<string> = new Set([
 
   // strings and characters
   "MAKE-STRING", "STRING", "STRING-UPCASE", "STRING-DOWNCASE", "STRING-CAPITALIZE",
-  "STRING=", "STRING<", "STRING>", "STRING-EQUAL", "STRING-TRIM", "STRING-LEFT-TRIM",
+  "STRING=", "STRING>", "STRING-EQUAL", "STRING-TRIM", "STRING-LEFT-TRIM",
   "STRING-RIGHT-TRIM", "CHAR<", "CHAR>",
   "CHAR-DOWNCASE", "CHAR-CODE", "CODE-CHAR", "DIGIT-CHAR", "ALPHA-CHAR-P",
   "UPPER-CASE-P", "LOWER-CASE-P", "PARSE-INTEGER", "CHAR-NAME", "NAME-CHAR",
@@ -55,11 +55,12 @@ export const STANDARD_SYMBOLS: ReadonlySet<string> = new Set([
 
   // hash tables
   "SETHASH",
-  "GETF", "REMF", "SYMBOL-PLIST",
+  "REMF", "SYMBOL-PLIST",
 
   // misc
   "WARN", "ABORT", "ASSERT", "CHECK-TYPE", "SLEEP", "GC", "SAVE-LISP-AND-DIE",
 ]);
+
 
 
 

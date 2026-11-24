@@ -779,3 +779,72 @@ register("PRIN1-TO-STRING", 1, 1, (args) => ({
   value: printValue(args[0]!),
 }));
 
+
+// GETF reads a property list: pairs of indicator and value. `eql` is CL's test.
+register("GETF", 2, 3, (args) => {
+  const entry = findProperty(args[0]!, args[1]!);
+  return entry === undefined ? (args[2] ?? NIL) : entry.value;
+});
+
+export function findProperty(
+  plist: LispValue,
+  indicator: LispValue,
+): { readonly value: LispValue } | undefined {
+  if (plist.kind !== "cons" && !isNil(plist))
+    throw new LispEvalError(
+      "type-error",
+      null,
+      `GETF: expected a property list, got ${plist.kind}`,
+    );
+
+  let cursor = plist;
+  while (cursor.kind === "cons") {
+    const rest = cursor.cdr;
+    if (!isNil(rest) && rest.kind !== "cons")
+      throw new LispEvalError(
+        "malformed-form",
+        null,
+        "GETF: the property list ends with a lone indicator",
+      );
+    if (rest.kind !== "cons") break;
+    if (isEq(cursor.car, indicator)) return { value: rest.car };
+    cursor = rest.cdr;
+  }
+  return undefined;
+}
+
+export function setProperty(
+  plist: LispValue,
+  indicator: LispValue,
+  value: LispValue,
+): LispValue {
+  let cursor = plist;
+  while (cursor.kind === "cons") {
+    const rest = cursor.cdr;
+    if (rest.kind !== "cons") break;
+    if (isEq(cursor.car, indicator)) {
+      rest.car = value;
+      return plist;
+    }
+    cursor = rest.cdr;
+  }
+  // Absent: a new pair goes on the front, as CL's getf place does.
+  return cons(indicator, cons(value, plist));
+}
+
+// STRING< compares string designators — a string, a symbol's name, or a
+// character as a one-character string.
+function stringDesignator(value: LispValue, name: string): string {
+  if (value.kind === "string") return value.value;
+  if (value.kind === "symbol") return value.name;
+  if (value.kind === "char") return value.value;
+  throw new LispEvalError("type-error", null, `${name}: expected a string designator, got ${value.kind}`);
+}
+
+register("STRING<", 2, 2, (args) =>
+  stringDesignator(args[0]!, "STRING<") < stringDesignator(args[1]!, "STRING<")
+    ? intern("T")
+    : NIL,
+);
+
+
