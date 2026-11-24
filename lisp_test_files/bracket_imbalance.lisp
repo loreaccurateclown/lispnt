@@ -57,9 +57,9 @@
 
 ;;;; ------------------------------------------------------------------
 ;;;; Balanced but wrongly grouped: the bracket count is right, the shape
-;;;; is not. These are live. Lispnt still reports the whole form with "This
-;;;; form is missing part of its syntax." — the LET repair message is the
-;;;; next slice.
+;;;; is not. These are live. Each reports one let-binding mark over the whole
+;;;; form, with the repair: "LET bindings need a pair of brackets each: write
+;;;; `((x 0))` so `X` is bound to `0` …".
 ;;;; ------------------------------------------------------------------
 
 ;;;; Meant to be: (let ((x 0)) ...) — X starting at 0.

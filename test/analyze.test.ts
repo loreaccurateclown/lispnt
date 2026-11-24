@@ -91,6 +91,45 @@ test("keeps an arity mistake for a function the file defines", () => {
   );
 });
 
+// The repair, not the verdict: the learner wrote (x 0) where ((x 0)) was meant,
+// and the whole form is marked because the brackets are what is wrong.
+test("says how to repair a binding list written without its inner brackets", () => {
+  const [diagnostic] = analyze("(let (x 0))");
+
+  assert.equal(diagnostic?.code, "let-binding");
+  assert.equal(
+    diagnostic?.message,
+    "LET bindings need a pair of brackets each: write `((x 0))` so `X` is bound to `0`. As written, LET reads `X`, then takes `0` as a second binding, which fails.",
+  );
+  assert.deepEqual(diagnostic?.position, { line: 1, column: 1, offset: 0 });
+  assert.deepEqual(diagnostic?.end, { line: 1, column: 12, offset: 11 });
+});
+
+test("names LET* in its own words", () => {
+  const [diagnostic] = analyze("(let* (x 0) x)");
+
+  assert.equal(diagnostic?.code, "let-binding");
+  assert.match(
+    diagnostic?.message ?? "",
+    /^LET\* bindings need a pair of brackets each/,
+  );
+});
+
+test("reports a binding entry that is neither a name nor a pair", () => {
+  const [diagnostic] = analyze("(let (0) 1)");
+
+  assert.equal(
+    diagnostic?.message,
+    "Each LET binding is a name or a `(name value)` pair, as in `((x 0))`. As written, `0` is not a binding.",
+  );
+});
+
+test("leaves legal binding lists alone", () => {
+  assert.deepEqual(analyze("(let (x) 0)"), []);
+  assert.deepEqual(analyze("(let ((x 0)))"), []);
+  assert.deepEqual(analyze("(let ((x 0) (y)) x)"), []);
+});
+
 test("reports an error that occurs after a valid first form", () => {
   const diagnostics = analyze("(list 1))");
 
@@ -448,6 +487,7 @@ test("the diagnostic showcase still demonstrates what it claims", () => {
     "reader-unterminated-block-comment.lisp": ["unterminated-block-comment"],
     "reader-unexpected-eof.lisp": ["unexpected-eof"],
     "reader-dotted-tail.lisp": ["dotted-tail-extra-form", "stray-closer"],
+    "let-binding.lisp": ["let-binding"],
     "shapes.lisp": [
       "defun-name",
       "defun-arglist",

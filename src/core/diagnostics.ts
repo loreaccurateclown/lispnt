@@ -13,6 +13,7 @@ export type ShapeCode =
   | "defun-arglist"
   | "lambda-arglist"
   | "let-bindings"
+  | "let-binding"
   | "local-definitions"
   | "local-definition";
 

@@ -67,7 +67,7 @@ export function analyze(source: string): Diagnostic[] {
     diagnostics.push(diagnosticFromError(error, lastCompleteLine));
   }
 
-  diagnostics.push(...checkForms(forms));
+  diagnostics.push(...checkForms(forms, source));
 
   // A file that loads another cannot be checked for undefined functions: the
   // definitions may arrive from the loaded file.
