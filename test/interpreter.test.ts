@@ -238,7 +238,7 @@ test("binds a function value for defun", () => {
   if (value.kind !== "function") return;
 
   assert.equal(value.name, "F");
-  assert.deepEqual(value.params, ["X"]);
+  assert.deepEqual(value.lambdaList.required, ["X"]);
   assert.equal(value.body.length, 1);
 });
 
@@ -261,6 +261,109 @@ test("rejects a call with too few arguments", () => {
 
 test("rejects a call with too many arguments", () => {
   assert.throws(() => run("(progn (defun f (x) x) (f 1 2))"));
+});
+
+// A lambda list is parsed where the function is written, and its defaults run in
+// the call's scope. These use evalIn so the definition and the call are separate
+// top-level forms, the way a learner writes them.
+function errorCodeOf(source: string): string | undefined {
+  try {
+    evalIn(source);
+    return undefined;
+  } catch (error) {
+    return error instanceof LispEvalError ? error.code : "not-a-lisp-error";
+  }
+}
+
+test("binds a &optional parameter from its default when it is omitted", () => {
+  assert.deepEqual(evalIn("(defun f (&optional (x 5)) x) (f)"), num(5));
+  assert.deepEqual(evalIn("(defun f (&optional (x 5)) x) (f 3)"), num(3));
+});
+
+test("binds NIL to an &optional parameter with no default", () => {
+  assert.ok(isNil(evalIn("(defun f (&optional x) x) (f)")));
+});
+
+test("binds a supplied-p name to T or NIL", () => {
+  assert.equal(printValueOf("(defun f (&optional (x 1 sp)) (list x sp)) (f)"), "(1 NIL)");
+  assert.equal(printValueOf("(defun f (&optional (x 1 sp)) (list x sp)) (f 9)"), "(9 T)");
+});
+
+test("evaluates an &optional default in the scope of the parameters before it", () => {
+  assert.equal(printValueOf("(defun f (a &optional (b a)) (list a b)) (f 2)"), "(2 2)");
+});
+
+test("collects the remaining arguments into &rest", () => {
+  assert.equal(printValueOf("(defun f (a &rest xs) (list a xs)) (f 1 2 3)"), "(1 (2 3))");
+  assert.equal(printValueOf("(defun f (a &rest xs) (list a xs)) (f 1)"), "(1 NIL)");
+  assert.equal(printValueOf("(defun f (&rest xs) xs) (f 1 2 3 4)"), "(1 2 3 4)");
+});
+
+test("treats &body as &rest", () => {
+  assert.equal(printValueOf("(defun f (&body xs) xs) (f 1 2)"), "(1 2)");
+});
+
+test("binds &key parameters by keyword name", () => {
+  assert.deepEqual(evalIn("(defun f (&key a) a) (f :a 1)"), num(1));
+  assert.ok(isNil(evalIn("(defun f (&key a) a) (f)")));
+});
+
+test("binds a &key default and supplied-p name", () => {
+  assert.equal(printValueOf("(defun f (&key (a 2 ap)) (list a ap)) (f)"), "(2 NIL)");
+  assert.equal(printValueOf("(defun f (&key (a 2 ap)) (list a ap)) (f :a 7)"), "(7 T)");
+});
+
+test("matches a renamed &key parameter on its keyword, not its variable", () => {
+  assert.deepEqual(evalIn("(defun f (&key ((:total sum))) sum) (f :total 4)"), num(4));
+});
+
+test("accepts &key arguments in any order", () => {
+  assert.equal(printValueOf("(defun f (&key a b) (list a b)) (f :b 2 :a 1)"), "(1 2)");
+});
+
+test("gives &rest and &key the same remaining arguments", () => {
+  assert.equal(
+    printValueOf("(defun f (&rest r &key a) (list a r)) (f :a 1)"),
+    "(1 (:A 1))",
+  );
+});
+
+test("binds &aux in order, after the other parameters", () => {
+  assert.deepEqual(evalIn("(defun f (a &aux (b (* a 2))) b) (f 3)"), num(6));
+  assert.ok(isNil(evalIn("(defun f (&aux b) b) (f)")));
+});
+
+test("counts only required parameters against the minimum", () => {
+  assert.equal(errorCodeOf("(defun f (a &optional b) b) (f)"), "arity");
+  assert.equal(errorCodeOf("(defun f (&optional a) a) (f 1 2)"), "arity");
+  assert.equal(errorCodeOf("(defun f (&rest xs) xs) (f 1 2 3)"), undefined);
+});
+
+test("rejects keyword arguments that do not fit the lambda list", () => {
+  assert.equal(errorCodeOf("(defun f (&key a) a) (f :a)"), "malformed-form");
+  assert.equal(errorCodeOf("(defun f (&key a) a) (f :b 1)"), "type-error");
+  assert.equal(errorCodeOf("(defun f (&key a) a) (f 1 2)"), "type-error");
+});
+
+test("reports lambda list features it does not model as our gap", () => {
+  assert.equal(errorCodeOf("(defun f (&rest r &allow-other-keys) r)"), "unsupported-standard");
+});
+
+test("rejects a lambda list whose markers are out of order or repeated", () => {
+  assert.equal(errorCodeOf("(defun f (&key a &optional b) b)"), "malformed-form");
+  assert.equal(errorCodeOf("(defun f (a a) a)"), "malformed-form");
+});
+
+test("rejects a &rest with no parameter name", () => {
+  assert.equal(errorCodeOf("(defun f (&rest) 1)"), "malformed-form");
+  assert.equal(errorCodeOf("(defun f (&rest &key a) a)"), "malformed-form");
+  // &optional and &key may end the list with nothing after them.
+  assert.deepEqual(evalIn("(defun f (&optional) 1) (f)"), num(1));
+});
+
+test("accepts a lambda list on a lambda and a local function", () => {
+  assert.deepEqual(evalIn("(funcall (lambda (&optional (x 2)) x))"), num(2));
+  assert.deepEqual(evalIn("(labels ((g (&key a) a)) (g :a 3))"), num(3));
 });
 
 test("lets a body read a binding from its defining environment", () => {
@@ -1166,7 +1269,7 @@ test("rejects a keyword that names no slot", () => {
   assert.throws(
     () => evalIn("(defstruct point x) (make-point :z 1)"),
     (error: unknown) => {
-      return error instanceof LispEvalError && error.code === "malformed-form";
+      return error instanceof LispEvalError && error.code === "type-error";
     },
   );
 });

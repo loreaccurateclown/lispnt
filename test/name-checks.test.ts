@@ -175,6 +175,21 @@ test("accepts keyword arguments after &key", () => {
   assert.deepEqual(codes("(defun f (&key a) a) (f :a 1)"), []);
 });
 
+test("checks the default value forms in a lambda list", () => {
+  assert.deepEqual(codes("(defun f (&optional (a missing)) a)"), [
+    "unbound-variable",
+  ]);
+});
+
+test("does not report supplied-p or &aux names", () => {
+  assert.deepEqual(codes("(defun f (&optional (a 1 sp) &aux (b a)) (list a sp b))"), []);
+});
+
+test("reports a default that names a parameter to its right", () => {
+  // Parameters bind left to right, so B is not in scope in A's default.
+  assert.deepEqual(codes("(defun f (&optional (a b) b) a)"), ["unbound-variable"]);
+});
+
 test("downgrades arity when the function is defined twice", () => {
   const found = diagnose("(defun f (x) x) (defun f (x y) x) (f 1)");
 

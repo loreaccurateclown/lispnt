@@ -93,6 +93,43 @@ test("scopes lambda parameters to its body", () => {
   assert.equal(body?.kind, "parameter");
 });
 
+test("binds every variable a full lambda list names", () => {
+  const source = "(defun f (a &optional b &rest r &key c &aux d) (list a b r c d))";
+  const body = scopeAt(source, source.indexOf("(list a b r c d)"));
+
+  for (const name of ["A", "B", "R", "C", "D"]) {
+    assert.equal(lookupVariable(body, name)?.kind, "parameter", name);
+  }
+
+  // The markers themselves are grammar, not names in the body.
+  assert.equal(lookupVariable(body, "&OPTIONAL"), undefined);
+});
+
+test("binds supplied-p names and the variable of a renamed &key parameter", () => {
+  const source = "(defun f (&optional (x 1 sp) &key ((:total sum) 0 tp)) (list x sp sum tp))";
+  const body = scopeAt(source, source.indexOf("(list x sp sum tp)"));
+
+  for (const name of ["X", "SP", "SUM", "TP"]) {
+    assert.equal(lookupVariable(body, name)?.kind, "parameter", name);
+  }
+});
+
+test("evaluates a default in the scope of the parameters to its left", () => {
+  const source = "(defun f (a &optional (b a)) (list a b))";
+  const defaultScope = scopeAt(source, source.indexOf("a))"));
+
+  assert.equal(lookupVariable(defaultScope, "A")?.kind, "parameter");
+  // B's own default cannot see B; only the parameters before it.
+  assert.equal(lookupVariable(defaultScope, "B"), undefined);
+});
+
+test("evaluates an &aux initial value with the parameters in scope", () => {
+  const source = "(defun f (x &aux (y x)) y)";
+  const initScope = scopeAt(source, source.indexOf("x))"));
+
+  assert.equal(lookupVariable(initScope, "X")?.kind, "parameter");
+});
+
 test("evaluates let values before binding any name", () => {
   const source = "(let ((a 1) (b a)) b)";
   const valueScope = scopeAt(source, source.indexOf("a))"));

@@ -5,6 +5,8 @@ import {
   isNil,
   Env,
   isTruthy,
+  type KeywordParameter,
+  type LambdaList,
   type LispValue,
   FunctionValue,
   Place,
@@ -25,6 +27,7 @@ import {
   expectNumber,
   hashTableKey,
   isEq,
+  listFrom,
   register,
   structTypeNames,
 } from "./builtins";
@@ -193,18 +196,8 @@ function evaluateValues(node: AstNode, env: Env): LispValue[] {
 }
 
 export function applyFunction(fn: FunctionValue, args: LispValue[]): LispValue {
-  if (args.length !== fn.params.length) {
-    throw new LispEvalError(
-      "arity",
-      null,
-      `${fn.name} expects ${fn.params.length} argument(s), got ${args.length}`,
-    );
-  }
-
   const scope = createEnv(fn.env);
-  for (let index = 0; index < fn.params.length; index += 1) {
-    define(scope, fn.params[index]!, args[index]!);
-  }
+  bindLambdaList(fn.lambdaList, args, scope, fn.name);
 
   currentObserver?.onCallEnter?.(fn, args);
   // The observer sees every value the body returned, so a trace can show "1 2";
@@ -212,6 +205,112 @@ export function applyFunction(fn: FunctionValue, args: LispValue[]): LispValue {
   const raw = evaluateBodyRaw(fn.body, scope);
   currentObserver?.onCallExit?.(fn, raw);
   return unwrapValues(raw);
+}
+
+// CL's own reading of a wrong argument count, used here rather than built there
+// because the name checker owns the whole-file report; this one only reaches a
+// call that the checker let through.
+function arityMessage(name: string, given: number, min: number, max: number | null): string {
+  if (max === null)
+    return `${name} takes at least ${min} argument(s), but is called with ${given}`;
+  if (min === max)
+    return `${name} takes exactly ${max} argument(s), but is called with ${given}`;
+  return `${name} takes ${min} to ${max} argument(s), but is called with ${given}`;
+}
+
+function bindLambdaList(
+  lambdaList: LambdaList,
+  args: readonly LispValue[],
+  scope: Env,
+  name: string,
+): void {
+  const min = lambdaList.required.length;
+  const max =
+    lambdaList.rest !== undefined || lambdaList.keys.length > 0
+      ? null
+      : min + lambdaList.optional.length;
+
+  if (args.length < min || (max !== null && args.length > max))
+    throw new LispEvalError("arity", null, arityMessage(name, args.length, min, max));
+
+  let index = 0;
+  for (const parameter of lambdaList.required) {
+    define(scope, parameter, args[index]!);
+    index += 1;
+  }
+
+  for (const parameter of lambdaList.optional) {
+    // A default is evaluated in the call's scope, so it can name the parameters
+    // bound before it, as CL allows.
+    const given = index < args.length ? args[index] : undefined;
+    index += 1;
+    define(
+      scope,
+      parameter.name,
+      given ?? (parameter.default === undefined ? NIL : evaluate(parameter.default, scope)),
+    );
+    if (parameter.suppliedP !== undefined)
+      define(scope, parameter.suppliedP, given === undefined ? NIL : intern("T"));
+  }
+
+  // The rest argument keeps the keywords it holds: CL gives &rest and &key the
+  // same remaining arguments.
+  const remaining = args.slice(index);
+  if (lambdaList.rest !== undefined) define(scope, lambdaList.rest, listFrom(remaining));
+  if (lambdaList.keys.length > 0)
+    bindKeywordArguments(lambdaList.keys, remaining, scope, name);
+
+  for (const parameter of lambdaList.aux) {
+    define(
+      scope,
+      parameter.name,
+      parameter.init === undefined ? NIL : evaluate(parameter.init, scope),
+    );
+  }
+}
+
+function bindKeywordArguments(
+  keys: readonly KeywordParameter[],
+  args: readonly LispValue[],
+  scope: Env,
+  name: string,
+): void {
+  if (args.length % 2 !== 0)
+    throw new LispEvalError(
+      "malformed-form",
+      null,
+      `${name}: keyword arguments come in name value pairs`,
+    );
+
+  const given = new Map<string, LispValue>();
+  for (let index = 0; index < args.length; index += 2) {
+    const keyword = args[index]!;
+    const key =
+      keyword.kind === "symbol" && keyword.name.startsWith(":")
+        ? keyword.name.toUpperCase()
+        : undefined;
+    if (key === undefined)
+      throw new LispEvalError(
+        "type-error",
+        null,
+        `${name}: expected a keyword argument name, got ${keyword.kind}`,
+      );
+    if (!keys.some((parameter) => parameter.keyword === key))
+      throw new LispEvalError("type-error", null, `${name} does not accept the keyword ${key}`);
+    given.set(key, args[index + 1]!);
+  }
+
+  for (const parameter of keys) {
+    const supplied = given.get(parameter.keyword);
+    define(
+      scope,
+      parameter.name,
+      supplied ??
+        (parameter.default === undefined ? NIL : evaluate(parameter.default, scope)),
+    );
+    if (parameter.suppliedP !== undefined)
+      define(scope, parameter.suppliedP, supplied === undefined ? NIL : intern("T"));
+  }
 }
 
 export function callValue(callable: LispValue, args: LispValue[]): LispValue {
@@ -985,21 +1084,236 @@ function functionByName(node: AstNode, env: Env): LispValue {
   return target;
 }
 
-function parameterNames(paramsNode: ListNode, form: ListNode): string[] {
-  const params: string[] = [];
+// CL allows these markers in this order. &allow-other-keys is deliberately
+// absent: it is a marker Lispnt does not model, so meeting it is our gap and is
+// reported as such rather than quietly ignored.
+const LAMBDA_MARKERS: ReadonlyMap<string, { rank: number; mode: LambdaMode }> = new Map([
+  ["&OPTIONAL", { rank: 1, mode: "optional" }],
+  ["&REST", { rank: 2, mode: "rest" }],
+  ["&BODY", { rank: 2, mode: "rest" }],
+  ["&KEY", { rank: 3, mode: "key" }],
+  ["&AUX", { rank: 4, mode: "aux" }],
+]);
 
-  for (const paramNode of paramsNode.children) {
-    const param = symbolName(paramNode);
-    if (param === undefined)
+type LambdaMode = "required" | "optional" | "rest" | "key" | "aux";
+
+type Claim = (name: string, at: AstNode) => void;
+
+type ParameterEntry = {
+  name: string;
+  keyword?: string;
+  default?: AstNode;
+  suppliedP?: string;
+};
+
+// Parsed at definition time, so a broken lambda list points at the line the
+// learner wrote instead of at a call somewhere else.
+function parseLambdaList(paramsNode: ListNode): LambdaList {
+  const lambdaList: LambdaList = { required: [], optional: [], keys: [], aux: [] };
+  const seen = new Set<string>();
+  let mode: LambdaMode = "required";
+  let rank = 0;
+  // &rest is the one marker that must be followed by a name; SBCL reports
+  // "expecting variable after &REST" at compile time.
+  let restMarker: string | undefined;
+
+  const claim: Claim = (name, at) => {
+    if (seen.has(name))
       throw new LispEvalError(
         "malformed-form",
-        form.start,
-        "parameter must be a symbol",
+        at.start,
+        `${name} appears twice in this lambda list`,
       );
-    params.push(param);
+    seen.add(name);
+  };
+
+  for (const parameter of paramsNode.children) {
+    const word = symbolName(parameter);
+
+    if (word !== undefined && word.startsWith("&")) {
+      if (restMarker !== undefined)
+        throw new LispEvalError(
+          "malformed-form",
+          parameter.start,
+          `${restMarker} needs a parameter name`,
+        );
+      const marker = LAMBDA_MARKERS.get(word);
+      if (marker === undefined)
+        throw new LispEvalError(
+          "unsupported-standard",
+          parameter.start,
+          `lambda list marker ${word} is not implemented`,
+        );
+      if (marker.rank <= rank)
+        throw new LispEvalError(
+          "malformed-form",
+          parameter.start,
+          `${word} is out of order in this lambda list`,
+        );
+      mode = marker.mode;
+      rank = marker.rank;
+      if (mode === "rest") restMarker = word;
+      continue;
+    }
+
+    if (mode === "required") {
+      if (word === undefined)
+        throw new LispEvalError(
+          "malformed-form",
+          parameter.start,
+          "a required parameter must be a symbol",
+        );
+      claim(word, parameter);
+      lambdaList.required.push(word);
+      continue;
+    }
+
+    if (mode === "rest") {
+      if (word === undefined)
+        throw new LispEvalError(
+          "malformed-form",
+          parameter.start,
+          "&rest takes a single parameter name",
+        );
+      claim(word, parameter);
+      lambdaList.rest = word;
+      restMarker = undefined;
+      continue;
+    }
+
+    if (mode === "aux") {
+      lambdaList.aux.push(parseAuxEntry(parameter, claim));
+      continue;
+    }
+
+    const entry = parseParameterEntry(parameter, mode, claim);
+    if (mode === "optional") lambdaList.optional.push(entry);
+    else lambdaList.keys.push({ ...entry, keyword: entry.keyword ?? `:${entry.name}` });
   }
 
-  return params;
+  if (restMarker !== undefined)
+    throw new LispEvalError(
+      "malformed-form",
+      paramsNode.start,
+      `${restMarker} needs a parameter name`,
+    );
+
+  return lambdaList;
+}
+
+function parameterShape(mode: "optional" | "key"): string {
+  return mode === "key"
+    ? "a &key parameter is a name, (name default supplied-p) or ((:keyword name) …)"
+    : "a parameter is a name or (name default supplied-p)";
+}
+
+function parseParameterEntry(
+  node: AstNode,
+  mode: "optional" | "key",
+  claim: Claim,
+): ParameterEntry {
+  const symbol = symbolName(node);
+  if (symbol !== undefined) {
+    claim(symbol, node);
+    const entry: ParameterEntry = { name: symbol };
+    if (mode === "key") entry.keyword = `:${symbol}`;
+    return entry;
+  }
+
+  if (node.kind !== "list")
+    throw new LispEvalError("malformed-form", node.start, parameterShape(mode));
+
+  const head = node.children[0];
+  if (head === undefined)
+    throw new LispEvalError("malformed-form", node.start, parameterShape(mode));
+
+  // Only &key can rename the keyword its variable answers to.
+  let keyword: string | undefined;
+  let nameNode: AstNode | undefined = head;
+  if (head.kind === "list") {
+    const keywordNode = head.children[0];
+    const renamed = head.children[1];
+    const keywordName = keywordNode === undefined ? undefined : symbolName(keywordNode);
+    if (
+      mode !== "key" ||
+      keywordName === undefined ||
+      !keywordName.startsWith(":") ||
+      renamed === undefined ||
+      head.children.length !== 2
+    )
+      throw new LispEvalError("malformed-form", head.start, parameterShape(mode));
+    keyword = keywordName;
+    nameNode = renamed;
+  }
+
+  const name = nameNode === undefined ? undefined : symbolName(nameNode);
+  if (name === undefined)
+    throw new LispEvalError("malformed-form", node.start, parameterShape(mode));
+
+  const tail = node.children.slice(1);
+  if (tail.length > 2)
+    throw new LispEvalError(
+      "malformed-form",
+      tail[2]!.start,
+      "a parameter takes a name, a default and a supplied-p name",
+    );
+
+  claim(name, node);
+  const entry: ParameterEntry = { name };
+  if (mode === "key") entry.keyword = keyword ?? `:${name}`;
+
+  const defaultNode = tail[0];
+  if (defaultNode !== undefined) entry.default = defaultNode;
+
+  const suppliedNode = tail[1];
+  if (suppliedNode !== undefined) {
+    const supplied = symbolName(suppliedNode);
+    if (supplied === undefined)
+      throw new LispEvalError(
+        "malformed-form",
+        suppliedNode.start,
+        "a supplied-p name must be a symbol",
+      );
+    claim(supplied, suppliedNode);
+    entry.suppliedP = supplied;
+  }
+
+  return entry;
+}
+
+function parseAuxEntry(node: AstNode, claim: Claim): { name: string; init?: AstNode } {
+  const symbol = symbolName(node);
+  if (symbol !== undefined) {
+    claim(symbol, node);
+    return { name: symbol };
+  }
+
+  if (node.kind !== "list")
+    throw new LispEvalError(
+      "malformed-form",
+      node.start,
+      "an &aux parameter is a name or a (name initial-value) list",
+    );
+
+  const head = node.children[0];
+  const name = head === undefined ? undefined : symbolName(head);
+  if (name === undefined)
+    throw new LispEvalError(
+      "malformed-form",
+      node.start,
+      "an &aux parameter is a name or a (name initial-value) list",
+    );
+
+  if (node.children.length > 2)
+    throw new LispEvalError(
+      "malformed-form",
+      node.children[2]!.start,
+      "an &aux parameter takes a name and an initial value",
+    );
+
+  claim(name, node);
+  const init = node.children[1];
+  return init === undefined ? { name } : { name, init };
 }
 
 function symbolName(node: AstNode): string | undefined {
@@ -1109,12 +1423,12 @@ function evalDefun(form: ListNode, env: Env): LispValue {
       "defun needs a name and an argument list",
     );
 
-  const params = parameterNames(paramsNode, form);
+  const lambdaList = parseLambdaList(paramsNode);
 
   define(env, name, {
     kind: "function",
     name,
-    params,
+    lambdaList,
     body: form.children.slice(3), // slice(3): drop "defun", the name and the parameter list, keep the body
     env,
   });
@@ -1134,7 +1448,7 @@ function evalLambda(form: ListNode, env: Env): FunctionValue {
   return {
     kind: "function",
     name: "LAMBDA",
-    params: parameterNames(paramsNode, form),
+    lambdaList: parseLambdaList(paramsNode),
     body: form.children.slice(2), // slice(2): drop "lambda" and the parameter list
     env,
   };
@@ -1184,7 +1498,7 @@ function evalLocalFunctions(
       {
         kind: "function",
         name,
-        params: parameterNames(paramsNode, definitionNode),
+        lambdaList: parseLambdaList(paramsNode),
         body: definitionNode.children.slice(2), // slice(2): drop the name and parameter list
         // labels definitions see each other, so they close over the new scope;
         // flet definitions close over the outer env and cannot recurse by name.
@@ -1881,42 +2195,21 @@ function evalDefstruct(form: ListNode, env: Env): LispValue {
   const predicateName = `${typeName}-P`;
   const copierName = `COPY-${typeName}`;
 
+  // The constructor runs through the same keyword binder a (&key …) function
+  // uses, so the two cannot drift apart. A keyword that names no slot is the
+  // caller's mistake, not a missing piece of syntax.
+  const keys: KeywordParameter[] = slots.map((slot) =>
+    slot.defaultNode === undefined
+      ? { keyword: `:${slot.name}`, name: slot.name }
+      : { keyword: `:${slot.name}`, name: slot.name, default: slot.defaultNode },
+  );
+
   const construct: BuiltInValue["fn"] = (args) => {
+    const scope = createEnv(env);
+    bindKeywordArguments(keys, args, scope, constructorName);
+
     const values = new Map<string, LispValue>();
-    for (const slot of slots) {
-      values.set(
-        slot.name,
-        slot.defaultNode === undefined ? NIL : evaluate(slot.defaultNode, env),
-      );
-    }
-
-    if (args.length % 2 !== 0)
-      throw new LispEvalError(
-        "malformed-form",
-        null,
-        `${constructorName}: arguments come in :slot value pairs`,
-      );
-
-    for (let index = 0; index < args.length; index += 2) {
-      const keyword = args[index]!;
-      const slotName =
-        keyword.kind === "symbol" && keyword.name.startsWith(":")
-          ? keyword.name.slice(1)
-          : undefined;
-      if (slotName === undefined)
-        throw new LispEvalError(
-          "type-error",
-          null,
-          `${constructorName}: expected a :slot keyword, got ${keyword.kind}`,
-        );
-      if (!values.has(slotName))
-        throw new LispEvalError(
-          "malformed-form",
-          null,
-          `${typeName} has no slot named :${slotName}`,
-        );
-      values.set(slotName, args[index + 1]!);
-    }
+    for (const slot of slots) values.set(slot.name, lookup(scope, slot.name) ?? NIL);
 
     return { kind: "struct", type: typeName, slots: values };
   };

@@ -183,14 +183,14 @@ export function walkWithScopes(
 
   function visitDefun(node: ListNode, current: Scope): void {
     const parameters = parameterNodes(node.children[2]);
-    const inner = withParameters(current, parameters);
+    const inner = withParameters(current, parameters, visit);
 
     for (const form of node.children.slice(3)) visit(form, inner);
   }
 
   function visitLambda(node: ListNode, current: Scope): void {
     const parameters = parameterNodes(node.children[1]);
-    const inner = withParameters(current, parameters);
+    const inner = withParameters(current, parameters, visit);
 
     for (const form of node.children.slice(2)) visit(form, inner);
   }
@@ -249,7 +249,7 @@ export function walkWithScopes(
       // flet definitions are evaluated outside their own bindings; labels ones
       // can see themselves and each other.
       const definitionsScope = recursive ? inner : current;
-      const bodyScope = withParameters(definitionsScope, parameters);
+      const bodyScope = withParameters(definitionsScope, parameters, visit);
 
       for (const form of definition.children.slice(2)) visit(form, bodyScope);
     }
@@ -735,10 +735,53 @@ function childScope(parent: Scope): Scope {
   return { variables: new Map(), functions: new Map(), parent };
 }
 
-function withParameters(scope: Scope, parameters: AstNode[]): Scope {
-  const inner = childScope(scope);
-  for (const parameter of parameters) bindVariable(inner, parameter, "parameter");
-  return inner;
+// A parameter binds its variable, and the supplied-p name when it has one. A
+// marker binds nothing. For &key's ((:keyword name) …) form the variable is the
+// second element, because the first names the keyword instead.
+function parameterVariables(parameter: AstNode): AstNode[] {
+  if (isSymbolNode(parameter)) {
+    return symbolText(parameter).startsWith("&") ? [] : [parameter];
+  }
+
+  if (parameter.kind !== "list") return [];
+
+  const head = parameter.children[0];
+  const variable =
+    head !== undefined && head.kind === "list" ? head.children[1] : head;
+
+  const names: AstNode[] = [];
+  if (variable !== undefined) names.push(variable);
+
+  const supplied = parameter.children[2];
+  if (supplied !== undefined) names.push(supplied);
+
+  return names;
+}
+
+// Parameters bind left to right, and a default runs in the scope of the
+// parameters before it — so (defun f (a &optional (b a)) …) sees A. Each
+// parameter gets its own scope rather than sharing one, so a default recorded
+// here cannot later appear to see a name bound to its right.
+function withParameters(
+  scope: Scope,
+  parameters: AstNode[],
+  visitDefault: (node: AstNode, scope: Scope) => void,
+): Scope {
+  let current = scope;
+
+  for (const parameter of parameters) {
+    const defaultNode = parameter.kind === "list" ? parameter.children[1] : undefined;
+    if (defaultNode !== undefined) visitDefault(defaultNode, current);
+
+    const names = parameterVariables(parameter);
+    if (names.length === 0) continue;
+
+    const inner = childScope(current);
+    for (const name of names) bindVariable(inner, name, "parameter");
+    current = inner;
+  }
+
+  return current;
 }
 
 function bindVariable(scope: Scope, node: AstNode | undefined, kind: "local" | "parameter"): void {

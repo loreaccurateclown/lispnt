@@ -31,7 +31,7 @@ function func(name: string): LispValue {
   return {
     kind: "function",
     name,
-    params: [],
+    lambdaList: { required: [], optional: [], keys: [], aux: [] },
     body: [],
     env: { vars: new Map(), parent: null },
   };

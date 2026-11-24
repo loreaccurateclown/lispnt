@@ -95,7 +95,7 @@ function charAt(sequence: LispValue, index: LispValue, name: string): LispValue 
 }
 
 //don't confuse this from with form
-function listFrom(items: LispValue[], tail: LispValue = NIL): LispValue {
+export function listFrom(items: LispValue[], tail: LispValue = NIL): LispValue {
   let result: LispValue = tail;
 
   for (let index = items.length - 1; index >= 0; index -= 1) {

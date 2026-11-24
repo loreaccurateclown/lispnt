@@ -60,10 +60,29 @@ export type LispValue =
   | FunctionValue
   | BuiltInValue;
 
+// A lambda list, parsed once when a function is defined rather than on every
+// call: a malformed one is an error at the definition, which is the line the
+// learner wrote. `default` and `init` stay unevaluated — CL runs them in the
+// call's scope, so they can see the parameters bound before them.
+export type OptionalParameter = {
+  name: string;
+  default?: AstNode;
+  suppliedP?: string;
+};
+// A &key parameter answers to a keyword name, which the ((:kw var) …) form can
+// make different from the variable it binds.
+export type KeywordParameter = OptionalParameter & { keyword: string };
+export type LambdaList = {
+  required: string[];
+  optional: OptionalParameter[];
+  rest?: string;
+  keys: KeywordParameter[];
+  aux: Array<{ name: string; init?: AstNode }>;
+};
 export type FunctionValue = {
   kind: "function";
   name: string;
-  params: string[];
+  lambdaList: LambdaList;
   body: AstNode[];
   env: Env;
 };
