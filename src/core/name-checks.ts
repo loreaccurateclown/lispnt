@@ -57,6 +57,7 @@ function checkVariable(
     severity: "warning",
     message: `${name} has no value here. If it comes from another file, load that file first.`,
     position: node.start,
+    name,
   });
 }
 
@@ -103,6 +104,7 @@ function checkCall(
       severity: "warning",
       message: `No function ${name} is defined in this file. If it comes from another file, load that file first.`,
       position: head.start,
+      name,
     });
     return;
   }
@@ -160,6 +162,7 @@ function pushArity(
     severity,
     message: arityMessage(name, given, arity),
     position,
+    name,
   });
 }
 

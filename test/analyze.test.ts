@@ -38,6 +38,59 @@ test("reports an unterminated list at the paren on its own line", () => {
   assert.deepEqual(diagnostics[0]?.position, { line: 2, column: 1, offset: 9 });
 });
 
+test("counts the closers a nested unclosed form still needs", () => {
+  const [diagnostic] = analyze("(defun nested (x)\n  (let ((y 1))\n    (+ x (g y)");
+
+  assert.equal(diagnostic?.code, "unterminated-list");
+  assert.equal(
+    diagnostic?.message,
+    "3 lists are still open, so the file ends 3 `)` short. Add `)))` after the last line; the outermost opened on line 1.",
+  );
+  // The squiggle covers `(+` at the head, not the opening paren alone.
+  assert.deepEqual(diagnostic?.end, { line: 3, column: 7, offset: 39 });
+});
+
+test("names the last complete form as where checking stopped", () => {
+  const [diagnostic] = analyze("(defun f (x) x)\n(defun g (y)");
+
+  assert.equal(
+    diagnostic?.message,
+    "This form never closes, so the file ends 1 `)` short. Add `)` after the last line. The last complete form ends on line 1.",
+  );
+});
+
+// A missing closer swallows the rest of the file, so a name it defines looks
+// undefined. The file is read again with the closers supplied, and the warning is
+// dropped when that text defines the name.
+test("drops a warning that a missing closer manufactured", () => {
+  const diagnostics = analyze("(defun main () (helper))\n(defun helper () 1");
+
+  assert.deepEqual(
+    diagnostics.map((diagnostic) => diagnostic.code),
+    ["unterminated-list"],
+  );
+});
+
+test("keeps a warning the file really has, closers or no closers", () => {
+  const diagnostics = analyze(
+    "(defun good (x) (+ x missing-var))\n(defun broken (y)\n  (print y)",
+  );
+
+  assert.deepEqual(
+    diagnostics.map((diagnostic) => diagnostic.code),
+    ["unterminated-list", "unbound-variable"],
+  );
+});
+
+test("keeps an arity mistake for a function the file defines", () => {
+  const diagnostics = analyze("(defun f (a) a)\n(f 1 2)\n(defun broken (y)");
+
+  assert.deepEqual(
+    diagnostics.map((diagnostic) => diagnostic.code),
+    ["unterminated-list", "arity"],
+  );
+});
+
 test("reports an error that occurs after a valid first form", () => {
   const diagnostics = analyze("(list 1))");
 

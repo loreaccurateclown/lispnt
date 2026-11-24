@@ -1,13 +1,32 @@
 import type { Position } from "./reader";
 
+// A list the reader is still inside when it reaches the end of the file. The
+// position is its opening parenthesis; headEnd is the position just past the
+// form's head, so a diagnostic can underline `(let` instead of one character.
+export interface OpenForm {
+  readonly position: Position;
+  readonly headEnd?: Position;
+}
+
 export class ReaderError extends Error {
+  // Innermost first. Only an unterminated list carries these, and only when it
+  // is nested: the reader learns about the enclosing lists while the error
+  // unwinds through them.
+  readonly openForms?: readonly OpenForm[];
+
   constructor(
     readonly code: ReaderErrorCode,
     readonly position: Position,
     message: string,
+    options?: {
+      readonly openForms?: readonly OpenForm[];
+    },
   ) {
     super(message);
     this.name = "ReaderError";
+    // Assigned only when present: exactOptionalPropertyTypes forbids writing an
+    // explicit undefined over an optional property.
+    if (options?.openForms !== undefined) this.openForms = options.openForms;
   }
 }
 

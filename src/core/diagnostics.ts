@@ -37,18 +37,29 @@ export interface Diagnostic {
   readonly code: DiagnosticCode;
   readonly severity: DiagnosticSeverity;
   readonly message: string;
-  readonly position: Position; //one position for now, will be converted into range later
+  readonly position: Position; //where the squiggle starts; M2 deferred the rest to this layer
+  // Where the squiggle stops, when the mistake is longer than its start. Absent
+  // means the presentation layer underlines the whole line, as before.
+  readonly end?: Position;
+  // The name a name check is about. Analysis uses it to tell a mistake the file
+  // really has from one the missing brackets hid.
+  readonly name?: string;
 }
 
-export function diagnosticFromError(error: ReaderError): Diagnostic {
-  const userMessage = userMessageSwitcher(error.code);
-
-  return {
+export function diagnosticFromError(
+  error: ReaderError,
+  lastCompleteLine?: number,
+): Diagnostic {
+  const message = readerMessage(error, lastCompleteLine);
+  const diagnostic: Diagnostic = {
     code: error.code,
     severity: "error",
-    message: userMessage,
+    message,
     position: error.position,
   };
+  // An unclosed form underlines from its `(` through its head, as in `(let`.
+  const end = error.openForms?.[0]?.headEnd;
+  return end === undefined ? diagnostic : { ...diagnostic, end };
 }
 
 export function diagnosticFromEvalError(
@@ -90,6 +101,38 @@ function evalMessage(code: EvalErrorCode): string {
     case "signalled-error":
       return "This code signals an error.";
   }
+}
+
+function readerMessage(error: ReaderError, lastCompleteLine?: number): string {
+  if (error.code === "unterminated-list") {
+    return unterminatedListMessage(error, lastCompleteLine);
+  }
+  return userMessageSwitcher(error.code);
+}
+
+// An unclosed form is the one reader mistake whose repair depends on how much
+// is missing, so the message counts the closers instead of asking for "a" `)`.
+// The learner has to add them at the end of the file; naming the outermost form
+// says where the first of them belongs, and the last complete form says where
+// checking stopped.
+function unterminatedListMessage(
+  error: ReaderError,
+  lastCompleteLine?: number,
+): string {
+  const openForms = error.openForms ?? [];
+  const count = Math.max(1, openForms.length);
+  const outermost = openForms[openForms.length - 1];
+  const closers = ")".repeat(count);
+
+  const tick = "`";
+  const short =
+    count === 1
+      ? "This form never closes, so the file ends 1 `)` short. Add `)` after the last line."
+      : `${count} lists are still open, so the file ends ${count} ${tick})${tick} short. Add ${tick}${closers}${tick} after the last line; the outermost opened on line ${outermost?.position.line ?? error.position.line}.`;
+
+  return lastCompleteLine === undefined
+    ? short
+    : `${short} The last complete form ends on line ${lastCompleteLine}.`;
 }
 
 function userMessageSwitcher(errorMessage: ReaderErrorCode): string {

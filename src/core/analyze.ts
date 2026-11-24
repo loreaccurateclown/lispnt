@@ -4,7 +4,7 @@ import {
   diagnosticFromEvalError,
   diagnosticFromError,
 } from "./diagnostics";
-import { LispEvalError } from "./errors";
+import { LispEvalError, type ReaderError } from "./errors";
 import {
   createEnv,
   evaluate,
@@ -14,6 +14,7 @@ import {
 } from "./interpreter";
 import { checkNames } from "./name-checks";
 import { type AstNode, createReader } from "./reader";
+import { collectSymbols } from "./scopes";
 import { emptyTraceMarkers } from "./trace-cases";
 
 // Mistakes the name checker reports for the whole file. Evaluation finds the
@@ -41,15 +42,29 @@ export function analyze(source: string): Diagnostic[] {
   const reader = createReader(source);
   const diagnostics: Diagnostic[] = [];
   const forms: AstNode[] = [];
+  const readerErrors: ReaderError[] = [];
 
   let result = reader.next();
   while (result.kind !== "end") {
     if (result.kind === "error") {
-      diagnostics.push(diagnosticFromError(result.error));
+      readerErrors.push(result.error);
     } else {
       forms.push(result.node);
     }
     result = reader.next();
+  }
+
+  // Where checking stops: the end of the last form that was complete.
+  const lastComplete = forms[forms.length - 1];
+  const lastCompleteLine =
+    lastComplete === undefined
+      ? undefined
+      : lastComplete.kind === "list"
+        ? lastComplete.end.line
+        : lastComplete.start.line;
+
+  for (const error of readerErrors) {
+    diagnostics.push(diagnosticFromError(error, lastCompleteLine));
   }
 
   diagnostics.push(...checkForms(forms));
@@ -125,5 +140,59 @@ export function analyze(source: string): Diagnostic[] {
     });
   }
 
-  return diagnostics;
+  const missingCloser = readerErrors.find(
+    (error) => error.code === "unterminated-list",
+  );
+  if (missingCloser === undefined) return diagnostics;
+
+  return withoutHiddenNameWarnings(
+    diagnostics,
+    forms,
+    recoveredNames(source, missingCloser),
+  );
+}
+
+// The names the file would define if its missing closers were supplied, or null
+// when even that read fails. Only the symbol table is used: the hypothetical
+// forms are never checked, evaluated or reported.
+function recoveredNames(
+  source: string,
+  error: ReaderError,
+): ReadonlySet<string> | null {
+  const count = Math.max(1, error.openForms?.length ?? 1);
+  const reader = createReader(source + ")".repeat(count));
+  const forms: AstNode[] = [];
+
+  for (;;) {
+    const result = reader.next();
+    if (result.kind === "end") break;
+    if (result.kind === "error") return null;
+    forms.push(result.node);
+  }
+
+  const symbols = collectSymbols(forms);
+  return new Set([...symbols.variables.keys(), ...symbols.functions.keys()]);
+}
+
+// A missing closer swallows the rest of the file, so a name defined after it
+// looks undefined. A warning is kept only when the file really lacks the name:
+// it is visible in what parsed, or the recovered text does not define it
+// either. When the recovered read fails the answer is unknown and the warning
+// is dropped, so that a shown warning always means a separate mistake.
+function withoutHiddenNameWarnings(
+  diagnostics: readonly Diagnostic[],
+  forms: readonly AstNode[],
+  recovered: ReadonlySet<string> | null,
+): Diagnostic[] {
+  const parsed = collectSymbols([...forms]);
+  const visible = new Set([
+    ...parsed.variables.keys(),
+    ...parsed.functions.keys(),
+  ]);
+
+  return diagnostics.filter((diagnostic) => {
+    if (!NAME_CODES.has(diagnostic.code)) return true;
+    if (diagnostic.name === undefined || visible.has(diagnostic.name)) return true;
+    return recovered !== null && !recovered.has(diagnostic.name);
+  });
 }

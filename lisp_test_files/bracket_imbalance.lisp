@@ -12,47 +12,54 @@
 ;;;; The balanced cases at the end are live, so their marks appear as soon as
 ;;;; the file is opened.
 ;;;;
-;;;; The "expect" lines describe what Lispnt does today — the starting point,
-;;;; not the target. Positions are relative to the snippet, not to this file.
-;;;; They are here so that a change of behaviour is visible.
+;;;; The "expect" lines describe what Lispnt does now. Positions are relative to
+;;;; the snippet, not to this file. They are here so a change of behaviour is
+;;;; visible.
 
 ;;;; CASE 1 — a closer with nothing left open.
-;;;; expect: stray-closer on the `)` that closes nothing (line 1).
+;;;; expect: stray-closer on the whole line, message "Unexpected ')': nothing is
+;;;; open here". A single character is too small a target to squiggle, so this
+;;;; one keeps the whole-line underline.
 ;;(defun stray (x) (+ x 1)))
 
 ;;;; CASE 2 — one list never closed.
-;;;; expect: unterminated-list on the `(` of the defun (line 1).
+;;;; expect: unterminated-list at the `(` of the defun (line 1), squiggle over
+;;;; `(defun`, message "This form never closes, so the file ends 1 `)` short. Add
+;;;; `)` after the last line."
 ;;(defun once (x)
 ;;  (+ x 1)
 
 ;;;; CASE 3 — three lists never closed.
-;;;; expect: unterminated-list on the `(` before `g` (line 3) — the innermost
-;;;; of the three. The defun and the let that contain it are also unclosed and
-;;;; are not mentioned.
+;;;; expect: unterminated-list on the innermost form, squiggle over `(+` (line 3):
+;;;; "3 lists are still open, so the file ends 3 `)` short. Add `)))` after the
+;;;; last line; the outermost opened on line 1."
 ;;(defun nested (x)
 ;;  (let ((y 1))
 ;;    (+ x (g y)
 
 ;;;; CASE 4 — a string runs to the end of the file.
-;;;; expect: unterminated-string on the opening quote (line 1).
+;;;; expect: unterminated-string on the opening quote (line 1), whole line.
 ;;(print "no closing quote)
 
 ;;;; CASE 5 — a block comment runs to the end of the file.
-;;;; expect: unterminated-block-comment on `#|` (line 1).
+;;;; expect: unterminated-block-comment on `#|` (line 1), whole line.
 ;;#| a comment that forgets to close
 ;;(defun after-comment (x) x)
 
 ;;;; CASE 6 — case 3 with the innermost form closed.
-;;;; expect: unterminated-list on the `(` of the let (line 2): supplying the
-;;;; closer for `(g y)` moves the mark out to the next open list.
+;;;; expect: unterminated-list on the `(` of the let (line 2), squiggle over
+;;;; `(let`: "2 lists are still open, so the file ends 2 `)` short. Add `))` after
+;;;; the last line; the outermost opened on line 1." Supplying one closer moved
+;;;; the mark out and dropped the count by one.
 ;;(defun outward (x)
 ;;  (let ((y 1))
 ;;    (+ x (g y))
 
 ;;;; ------------------------------------------------------------------
 ;;;; Balanced but wrongly grouped: the bracket count is right, the shape
-;;;; is not. These are live. Lispnt reports the whole form today, with
-;;;; "This form is missing part of its syntax."
+;;;; is not. These are live. Lispnt still reports the whole form with "This
+;;;; form is missing part of its syntax." — the LET repair message is the
+;;;; next slice.
 ;;;; ------------------------------------------------------------------
 
 ;;;; Meant to be: (let ((x 0)) ...) — X starting at 0.

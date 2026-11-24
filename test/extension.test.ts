@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { activateExtension, isLispDocument } from "../src/extension/activate";
+import { presentDiagnostics } from "../src/extension/present";
+import { analyze } from "../src/core/analyze";
 import { formatTraceReport } from "../src/extension/trace-report";
 import type { TraceNode } from "../src/extension/trace-tree";
 import type {
@@ -293,6 +295,18 @@ test("underlines the line a diagnostic was reported on", () => {
   assert.deepEqual(diagnostic?.range, {
     start: { line: 2, character: 0 },
     end: { line: 2, character: 3 },
+  });
+});
+
+// The core knows how far an unclosed form reaches (its `(` through its head),
+// so the editor gets a range instead of the whole first line.
+test("underlines an unclosed form from its paren through its head", () => {
+  const text = "(let (x 0)";
+  const diagnostics = presentDiagnostics(text, analyze(text));
+
+  assert.deepEqual(diagnostics[0]?.range, {
+    start: { line: 0, character: 0 },
+    end: { line: 0, character: 4 },
   });
 });
 

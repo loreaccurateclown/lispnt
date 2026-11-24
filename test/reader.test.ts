@@ -659,6 +659,28 @@ test("reports an unterminated list at the opening paren", () => {
   assert.deepEqual(error.position, { line: 1, column: 1, offset: 0 });
 });
 
+// The innermost frame throws and each enclosing frame adds itself while the
+// error unwinds, so the count of missing `)` and the outermost form are known
+// without any reader-wide state to go stale.
+test("records every list an unterminated form leaves open", () => {
+  const error = expectReaderError("(defun f (x)\n  (let ((y 1))\n    (+ x (g y)");
+
+  assert.deepEqual(
+    error.openForms?.map((form) => `${form.position.line}:${form.position.column}`),
+    ["3:5", "2:3", "1:1"],
+  );
+  // The head's last character, not the space after it: `(+`, not `(`.
+  assert.deepEqual(error.openForms?.[0]?.headEnd, { line: 3, column: 7, offset: 34 });
+  assert.deepEqual(error.openForms?.[2]?.headEnd, { line: 1, column: 7, offset: 6 });
+});
+
+test("stops reading after an unterminated list instead of repeating itself", () => {
+  const reader = createReader("(a");
+
+  assert.equal(reader.next().kind, "error");
+  assert.equal(reader.next().kind, "end");
+});
+
 test("reports an unterminated string at the opening quote", () => {
   const error = expectReaderError('"hi');
 

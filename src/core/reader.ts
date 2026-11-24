@@ -1,5 +1,5 @@
 import { diagnosticFromError } from "./diagnostics";
-import { ReaderError } from "./errors";
+import { ReaderError, type OpenForm } from "./errors";
 
 export interface Position {
   readonly line: number;
@@ -64,6 +64,12 @@ export function parse(source: string): AstNode {
 export function parseAll(source: string): AstNode[] {
   //factories are pretty neat, honestly.
   return createReader(source).parseAll();
+}
+
+// A frame of an unclosed list. Built without an explicit undefined because
+// exactOptionalPropertyTypes forbids assigning one to an optional property.
+function openForm(position: Position, headEnd: Position | undefined): OpenForm {
+  return headEnd === undefined ? { position } : { position, headEnd };
 }
 
 export function createReader(source: string): Reader {
@@ -245,8 +251,9 @@ export function createReader(source: string): Reader {
         return readList(); //JS hoisting is a neat concept but feels strange
       case '"':
         return readString();
-      case ")":
+      case ")": {
         throw new ReaderError("stray-closer", here(), "stray closer detected");
+      }
       case "'": //I initially wrote this switch statement on a whim but it's actually paid off massively for easily adding conditionals. Go figure.
         return readQuote("'", 1);
       case "#":
@@ -269,50 +276,70 @@ export function createReader(source: string): Reader {
   function readList(start: Position = here(), prefix?: string): ListNode {
     advance();
     const children: AstNode[] = [];
+    // Just past the head, captured before the trivia that follows it, so an
+    // unclosed form can be underlined as `(let` instead of a bare `(`.
+    let headEnd: Position | undefined;
     skipTrivia();
 
     let ch = peek();
-    while (ch !== undefined && ch !== ")") {
-      const next = peekAt(1);
-      const isDot =
-        peek() === "." && (next === undefined || atomDelimiters.includes(next));
+    try {
+      while (ch !== undefined && ch !== ")") {
+        const next = peekAt(1);
+        const isDot =
+          peek() === "." && (next === undefined || atomDelimiters.includes(next));
 
-      if (isDot) {
-        if (children.length === 0) {
-          throw new ReaderError(
-            "dotted-tail-without-head",
-            here(),
-            "dotted pair missing first element",
-          );
+        if (isDot) {
+          if (children.length === 0) {
+            throw new ReaderError(
+              "dotted-tail-without-head",
+              here(),
+              "dotted pair missing first element",
+            );
+          }
+          advance(); //past the "."
+          skipTrivia();
+          const tail = readNode();
+          skipTrivia(); //maybe it would have been better to do an optional bool passed to any reader function in case we don't want to skip trivia but that seems a bit hard to intuit
+
+          if (peek() !== ")") {
+            throw new ReaderError(
+              "dotted-tail-extra-form",
+              here(),
+              "dotted PAIR has more than one form after the dot.",
+            ); //maybe a little obnoxious for the error message but brevity is important when delivering bad news
+          }
+
+          advance();
+          const end = here();
+          if (prefix === undefined)
+            return { kind: "list", children, start, end, tail };
+          //otherwise:
+          return { kind: "list", prefix, children, start, end, tail }; //apparently it's not possible to do e.g. #(1 . 2) since they're different types so this is unreachable and exists only for TS's type checker.
         }
-        advance(); //past the "."
-        skipTrivia();
-        const tail = readNode();
-        skipTrivia(); //maybe it would have been better to do an optional bool passed to any reader function in case we don't want to skip trivia but that seems a bit hard to intuit
 
-        if (peek() !== ")") {
-          throw new ReaderError(
-            "dotted-tail-extra-form",
-            here(),
-            "dotted PAIR has more than one form after the dot.",
-          ); //maybe a little obnoxious for the error message but brevity is important when delivering bad news
-        }
-
-        advance();
-        const end = here();
-        if (prefix === undefined)
-          return { kind: "list", children, start, end, tail };
-        //otherwise:
-        return { kind: "list", prefix, children, start, end, tail }; //apparently it's not possible to do e.g. #(1 . 2) since they're different types so this is unreachable and exists only for TS's type checker.
+        children.push(readNode()); //feels very elegant. Well, if I wrote it myself anyway.
+        if (children.length === 1) headEnd = here(); //before skipTrivia: the head's last character, not the space after it
+        skipTrivia(); //it feels inefficient to manually call skipTrivia after calling readNode which has it anyway,
+        // but it's probably more dangerous trying to automate it/move it to the called funcs
+        ch = peek(); //starting to recognize this pattern
       }
-
-      children.push(readNode()); //feels very elegant. Well, if I wrote it myself anyway.
-      skipTrivia(); //it feels inefficient to manually call skipTrivia after calling readNode which has it anyway,
-      // but it's probably more dangerous trying to automate it/move it to the called funcs
-      ch = peek(); //starting to recognize this pattern
+    } catch (error) {
+      // The innermost frame throws; each enclosing frame adds itself while the
+      // error unwinds, which is how the count of missing `)` and the outermost
+      // form are known. A fresh error carries the longer list because the
+      // fields are readonly, and openForms lists innermost first.
+      if (error instanceof ReaderError && error.code === "unterminated-list") {
+        throw new ReaderError(error.code, error.position, error.message, {
+          openForms: [...(error.openForms ?? []), openForm(start, headEnd)],
+        });
+      }
+      throw error;
     }
-    if (ch === undefined)
-      throw new ReaderError("unterminated-list", start, "unterminated list");
+    if (ch === undefined) {
+      throw new ReaderError("unterminated-list", start, "unterminated list", {
+        openForms: [openForm(start, headEnd)],
+      });
+    }
     advance();
     const end = here(); //as above, so below
 
