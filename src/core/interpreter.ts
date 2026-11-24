@@ -139,6 +139,9 @@ export const SPECIAL_FORMS: ReadonlySet<string> = new Set([
   "CCASE",
   "LOOP",
   "WITH-OUTPUT-TO-STRING",
+  "MULTIPLE-VALUE-BIND",
+  "MULTIPLE-VALUE-SETQ",
+  "MULTIPLE-VALUE-LIST",
   "DEFPARAMETER",
   "DEFVAR",
   "DEFSTRUCT",
@@ -153,6 +156,19 @@ export const SPECIAL_FORMS: ReadonlySet<string> = new Set([
 let evaluationDepth = 0;
 
 export function evaluate(node: AstNode, env: Env  ): LispValue {
+  return unwrapValues(evaluateRaw(node, env));
+}
+
+// The primary value of a values bundle, which is what every single-value
+// context sees.
+export function unwrapValues(value: LispValue): LispValue {
+  if (value.kind !== "values") return value;
+  return value.values[0] ?? NIL;
+}
+
+// Evaluate a form without taking the primary value, so a caller can ask for all
+// of them: MULTIPLE-VALUE-BIND and the trace observer do.
+export function evaluateRaw(node: AstNode, env: Env): LispValue {
   const outermost = evaluationDepth === 0;
   if (outermost && !stepCeilingOpen) steps = 0;
   evaluationDepth += 1;
@@ -170,6 +186,12 @@ export function evaluate(node: AstNode, env: Env  ): LispValue {
   }
 }
 
+// Every value a form produced, and at least one — a single value counts as one.
+function evaluateValues(node: AstNode, env: Env): LispValue[] {
+  const value = evaluateRaw(node, env);
+  return value.kind === "values" ? value.values : [value];
+}
+
 export function applyFunction(fn: FunctionValue, args: LispValue[]): LispValue {
   if (args.length !== fn.params.length) {
     throw new LispEvalError(
@@ -185,9 +207,11 @@ export function applyFunction(fn: FunctionValue, args: LispValue[]): LispValue {
   }
 
   currentObserver?.onCallEnter?.(fn, args);
-  const value = evaluateBody(fn.body, scope );
-  currentObserver?.onCallExit?.(fn, value );
-  return value;
+  // The observer sees every value the body returned, so a trace can show "1 2";
+  // the call itself hands its caller the primary value.
+  const raw = evaluateBodyRaw(fn.body, scope);
+  currentObserver?.onCallExit?.(fn, raw);
+  return unwrapValues(raw);
 }
 
 export function callValue(callable: LispValue, args: LispValue[]): LispValue {
@@ -321,6 +345,12 @@ function evaluateInner(node: AstNode, env: Env): LispValue {
         return evalLoop(node, env);
       case "WITH-OUTPUT-TO-STRING":
         return evalWithOutputStream(node, env);
+      case "MULTIPLE-VALUE-BIND":
+        return evalMultipleValueBind(node, env);
+      case "MULTIPLE-VALUE-SETQ":
+        return evalMultipleValueSetq(node, env);
+      case "MULTIPLE-VALUE-LIST":
+        return evalMultipleValueList(node, env);
       case "RETURN":
         return evalReturn(node, env);
       case "PUSH":
@@ -1641,6 +1671,84 @@ function evalWithOutputStream(form: ListNode, env: Env): LispValue {
 
   return { kind: "string", value: stream.chunks.join("") };
 }
+// The body's last form is evaluated without taking the primary value, so the
+// call observer can report all of them.
+function evaluateBodyRaw(forms: AstNode[], env: Env): LispValue {
+  if (forms.length === 0) return NIL;
+  let result: LispValue = NIL;
+  for (let index = 0; index < forms.length - 1; index += 1)
+    result = evaluate(forms[index]!, env);
+  return evaluateRaw(forms[forms.length - 1]!, env);
+}
+
+
+// MULTIPLE-VALUE-BIND binds one name per value, NIL for any the form did not
+// provide; MULTIPLE-VALUE-SETQ assigns existing names; MULTIPLE-VALUE-LIST
+// collects every value into a list.
+function evalMultipleValueBind(form: ListNode, env: Env): LispValue {
+  const bindings = form.children[1];
+  const valueForm = form.children[2];
+  if (bindings === undefined || bindings.kind !== "list" || valueForm === undefined)
+    throw new LispEvalError(
+      "malformed-form",
+      form.start,
+      "multiple-value-bind needs (names) and a form",
+    );
+
+  const values = evaluateValues(valueForm, env);
+  const scope = createEnv(env);
+
+  for (let index = 0; index < bindings.children.length; index += 1) {
+    const name = symbolName(bindings.children[index]!);
+    if (name === undefined)
+      throw new LispEvalError(
+        "malformed-form",
+        form.start,
+        "multiple-value-bind needs variable names",
+      );
+    define(scope, name, values[index] ?? NIL);
+  }
+
+  return evaluateBody(form.children.slice(3), scope);
+}
+
+function evalMultipleValueSetq(form: ListNode, env: Env): LispValue {
+  const names = form.children[1];
+  const valueForm = form.children[2];
+  if (names === undefined || names.kind !== "list" || valueForm === undefined)
+    throw new LispEvalError(
+      "malformed-form",
+      form.start,
+      "multiple-value-setq needs (names) and a form",
+    );
+
+  const values = evaluateValues(valueForm, env);
+
+  for (let index = 0; index < names.children.length; index += 1) {
+    const name = symbolName(names.children[index]!);
+    if (name === undefined)
+      throw new LispEvalError(
+        "malformed-form",
+        form.start,
+        "multiple-value-setq needs variable names",
+      );
+    const value = values[index] ?? NIL;
+    if (!assign(env, name, value)) define(env, name, value);
+  }
+
+  return values[0] ?? NIL;
+}
+
+function evalMultipleValueList(form: ListNode, env: Env): LispValue {
+  const valueForm = form.children[1];
+  if (valueForm === undefined)
+    throw new LispEvalError(
+      "malformed-form",
+      form.start,
+      "multiple-value-list needs a form",
+    );
+  return listToValue(evaluateValues(valueForm, env));
+}
 function evalDefParameter(form: ListNode, env: Env): LispValue {
   const nameNode = form.children[1];
 
@@ -1989,6 +2097,8 @@ export function astToValue(node: AstNode): LispValue {
     seed,
   );
 }
+
+
 
 
 

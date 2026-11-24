@@ -368,7 +368,16 @@ register("FLOOR", 1, 2, (args) => {
       null,
       "FLOOR: division by zero",
     );
-  return { kind: "number", value: Math.floor(value / divisor) };
+  const quotient = Math.floor(value / divisor);
+  // CL's floor answers two values: the quotient and the remainder, which takes
+  // the sign of the divisor.
+  return {
+    kind: "values",
+    values: [
+      { kind: "number", value: quotient },
+      { kind: "number", value: value - quotient * divisor },
+    ],
+  };
 });
 register("SQRT", 1, 1, (args) => {
   const value = expectNumber(args[0]!);
@@ -597,10 +606,18 @@ register("MAKE-HASH-TABLE", 0, null, (args) => {
   return { kind: "hash", test, entries: new Map() };
 });
 
+// CL's gethash answers two values: the value (or the default) and whether the
+// key was present.
 register("GETHASH", 2, 3, (args) => {
   const table = expectHashTable(args[1]!);
   const entry = table.entries.get(hashTableKey(args[0]!, table.test));
-  return entry === undefined ? (args[2] ?? NIL) : entry.value;
+  return {
+    kind: "values",
+    values: [
+      entry === undefined ? (args[2] ?? NIL) : entry.value,
+      entry === undefined ? NIL : intern("T"),
+    ],
+  };
 });
 
 register("REMHASH", 2, 2, (args) => {
@@ -722,6 +739,8 @@ function formatText(control: string, args: LispValue[]): string {
 
   return out;
 }
+
+register("VALUES", 0, null, (args) => ({ kind: "values", values: args }));
 
 register("FORMAT", 2, null, (args) => {
   const destination = args[0]!;
@@ -846,5 +865,6 @@ register("STRING<", 2, 2, (args) =>
     ? intern("T")
     : NIL,
 );
+
 
 

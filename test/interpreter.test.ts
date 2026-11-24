@@ -1832,3 +1832,50 @@ test("builds the corpus word-counts table by incf", () => {
   ].join(" ");
   assert.deepEqual(evalIn(source), num(2));
 });
+
+//LLM-written tests for multiple values
+test("takes the primary value in a single-value context", () => {
+  assert.deepEqual(evalIn("(values 1 2)"), num(1));
+  assert.deepEqual(evalIn("(+ 1 (values 2 3))"), num(3));
+});
+
+test("collects every value into a list", () => {
+  assert.equal(printValueOf("(multiple-value-list (values 1 2))"), "(1 2)");
+  assert.equal(printValueOf("(multiple-value-list 5)"), "(5)");
+});
+
+test("binds every value and pads with NIL", () => {
+  assert.equal(
+    printValueOf("(multiple-value-bind (a b) (values 1 2) (list a b))"),
+    "(1 2)",
+  );
+  assert.equal(
+    printValueOf("(multiple-value-bind (a b) 5 (list a b))"),
+    "(5 NIL)",
+  );
+  assert.deepEqual(evalIn("(multiple-value-bind (a) (values 1 2) a)"), num(1));
+});
+
+test("assigns with multiple-value-setq", () => {
+  assert.equal(
+    printValueOf("(let ((a 1) (b 2)) (multiple-value-setq (a b) (values 10 20)) (list a b))"),
+    "(10 20)",
+  );
+});
+
+test("reads gethash value and present-p together", () => {
+  assert.equal(
+    printValueOf("(multiple-value-list (gethash 'a (make-hash-table)))"),
+    "(NIL NIL)",
+  );
+  assert.equal(
+    printValueOf("(setf h (make-hash-table)) (setf (gethash 'a h) 1) (multiple-value-list (gethash 'a h))"),
+    "(1 T)",
+  );
+});
+
+test("reads floor's quotient and remainder", () => {
+  assert.equal(printValueOf("(multiple-value-bind (q r) (floor 7 2) (list q r))"), "(3 1)");
+  assert.deepEqual(evalIn("(floor 7 2)"), num(3));
+  assert.deepEqual(evalIn("(multiple-value-bind (q r) (floor 7 2) r)"), num(1));
+});

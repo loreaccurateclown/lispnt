@@ -36,6 +36,10 @@ export type HashTest = "eq" | "eql" | "equal" | "equalp";
 // A string output stream: with-output-to-string binds one for its body, and
 // the write functions append to it.
 export type StreamValue = { kind: "stream"; chunks: string[] };
+// Several values from one form. It never reaches a single-value context —
+// evaluate() takes the primary — and exists so VALUES, MULTIPLE-VALUE-BIND and
+// the trace can see the rest.
+export type ValuesValue = { kind: "values"; values: LispValue[] };
 export type HashTableValue = {
   kind: "hash";
   test: HashTest;
@@ -52,6 +56,7 @@ export type LispValue =
   | StructValue
   | HashTableValue
   | StreamValue
+  | ValuesValue
   | FunctionValue
   | BuiltInValue;
 
@@ -99,4 +104,5 @@ export function intern(name: string): SymbolValue {
 export function isNil(value: LispValue): boolean {
   return value === NIL; //Computer Science is a complex field with many varied and interesting solutions to problems. This is not one of those solutions.
 }
+
 

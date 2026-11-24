@@ -55,6 +55,9 @@ function render(value: LispValue, depth: number, state: PrintState): string {
       return `#<hash-table :count ${value.entries.size}>`;
     case "stream":
       return "#<string-output-stream>";
+    case "values":
+      // A trace result prints every value, as SBCL's trace does: "1 2".
+      return value.values.map((item) => render(item, depth, state)).join(" ");
   }
 }
 
@@ -152,4 +155,5 @@ function renderStruct(
   const rendered = parts.length === 0 ? "" : ` ${parts.join(" ")}`;
   return `#S(${value.type}${rendered})`;
 }
+
 

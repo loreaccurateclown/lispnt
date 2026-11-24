@@ -362,3 +362,10 @@ test("explains a failed trace below its footer", () => {
 
   assert.match(text, /… stopped: type-error\n\nThis is a summary/);
 });
+
+test("shows every value a call returned", () => {
+  assert.match(
+    renderTrace(traceCalls("(defun f () (values 1 2)) (f)")),
+    /F\(\) => 1 2/,
+  );
+});
