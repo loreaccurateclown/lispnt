@@ -2,289 +2,266 @@
 
 Read this first in a new session. It records state, decisions, and working
 conventions so nothing has to be re-derived. `ROADMAP.md` is the long-form
-milestone record; this file is the working state.
+milestone record, including the **Agent working rules** section, which applies
+to you.
 
-Rewritten 2026-11-23, replacing an M4-era handoff. If an older copy turns up
-elsewhere, this one wins.
+Rewritten 2026-11-23 after the M3-EXTRA evaluator-gap work. Supersedes every
+earlier copy.
 
 ## What this is
 
-A read-only diagnostic path for Common Lisp (SBCL), aimed at learners, as a
-VS Code extension that sits alongside OLIVE/SBCL. It parses the open file with
-its own TypeScript s-expression reader and never evaluates anything in a live
-Lisp image.
+A read-only diagnostic path for Common Lisp (SBCL), aimed at learners, as a VS
+Code extension that sits alongside OLIVE/SBCL. It parses the open file with its
+own TypeScript s-expression reader and never evaluates anything in a live Lisp
+image.
 
-The project's core promise: **find the mistake before SBCL's debugger does.**
-Learners write a file, load and compile it in the REPL, and only at the third
-step discover something is wrong. Everything static here exists to shorten that.
+The promise: **find the mistake before SBCL's debugger does.** Learners write a
+file, load and compile it in the REPL, and only at the third step discover
+something is wrong. Everything static here exists to shorten that.
 
 ## Status
 
-- **M1 reader, M2 analyzer, M3 interpreter — complete.**
-- **M4 value tracking — complete in core.** `printValue`, per-pass step
-  ceilings, the value run (`recordBindings`/`snapshotAt`), and the hint layer
-  (`collectHints`, `formatHint`/`formatLine`). Extension-side setting and cache
-  remain, and are M6 work.
-- **M4-STATIC static checks — complete as scoped.** Scope model, walk rules,
-  name checks, `analyze` integration, and decoding of the standard forms we had
-  been skipping: `defstruct` (for the checker), `do`/`do*`, the `case` family,
-  and the binding macros.
-- **M5 recursion trace — complete in core.** `traceCalls`, `traceFormIn`,
-  `renderTrace`, and `traceCases` (the `;;[trace]` comment marker).
-- **M6 extension glue — not started.**
-- Optional last: M7 Prettier-style formatter; a benchmark pass.
+- **M1 reader, M2 analyzer, M3 interpreter, M4 value tracking, M4-STATIC static
+  checks, M5 recursion trace — complete in core.**
+- **M3-EXTRA — evaluator and standard-library gaps — shipped through multiple
+  values**, with two slices planned and recorded in `ROADMAP.md`: lambda lists,
+  then builtin keyword arguments. Read that section before starting work.
+- **M6 extension glue — not started.** `activate()`, a diagnostics provider, a
+  view; the only layer importing `vscode`.
+- **M7 formatter / benchmarks — optional, after M6.**
 
-Tests: **460** across eleven suites — 62 reader, 48 analyze, 131 interpreter,
-39 print, 8 pipeline, 24 bindings, 44 scopes, 49 name-checks, 19 hints, 21
-trace, 15 trace-cases. For current commit and tree state, run
-`git log --oneline -1` and `git status`; the tree should be clean at the end of
-a slice.
+Tests: **633** across eleven suites — 69 reader, 48 analyze, 259 interpreter,
+48 print, 8 pipeline, 24 bindings, 44 scopes, 51 name-checks, 19 hints, 40
+trace, 21 trace-cases. `npm test` is green at `ea87860`; the tree should be
+clean at the end of a slice.
 
-Corpus: 41 real `.lisp` files — 4 in `lisp_test_files/`, 37 under
-`G:\My Drive\Labs\CPS305` (outside the repo; reads work under the sandbox,
-nothing is written). `analyze` reports 10 diagnostics on 2 files, all genuine:
-`PI` never defined in `lab04/q1.lisp`, and seven `sum-kids`/`depth-kids`/`kids`
-mistakes in `patterns_test2/list_search.lisp`. 21 of the 37 files with `defun`s
-call none of them; 78 of 199 `defun`s are never called. That shape is why the
-static checker, not the evaluator, carries the project's value.
+Corpus: **40 files** (4 in `lisp_test_files/`, 36 under `G:\My Drive\Labs\CPS305`,
+outside the repo; reads work under the sandbox, nothing is written).
+`analyze` reports **10 diagnostics on 2 files**, all genuine: `PI` never
+defined in `lab04/q1.lisp`, and the `sum-kids`/`depth-kids`/`kids` mistakes in
+`patterns_test2/list_search.lisp`. That number has not moved through any of the
+M3-EXTRA work.
 
 ## Repo and toolchain
 
-- TypeScript 7.0.2 pinned in `devDependencies`; a global 7.0.2 also exists.
-- Repo: `C:\Users\admin\Desktop\Programming\TypeScript\Lispnt`, branch `master`.
-  Run `npm install` first if `node_modules/` is missing.
-- Build `npm run build`; check `npm run check`; test `npm test` (builds, then
-  runs each suite file explicitly — `node --test <dir>` fails in this sandbox
-  because it spawns children).
-- `dist/src/core/*.js` and `dist/test/*.js`; add every new suite to the `test`
-  script in `package.json`.
-- Tests use `node:test` with `node:assert/strict`. Agent-written blocks are
-  marked `//LLM-written tests`.
-- `tsconfig`: `nodenext` module/resolution (TS 7 removed `"node"`), `strict`,
-  `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` (optional properties
-  cannot be assigned `undefined` explicitly — omit them instead),
-  `noImplicitOverride`.
-- `.npmrc` pins the cache to `.npm-cache` (global npm cache is outside the
-  sandbox and fails with EPERM).
-- `userdocs/` is the user's own notes on Lisp and CL — not project material.
-  Leave it alone unless asked.
+- TypeScript 7.0.2 pinned; Node 22.21.0. Branch `master`. Run `npm install`
+  first if `node_modules/` is missing.
+- `npm run build`; `npm run check`; `npm test` (builds, then runs each suite
+  file explicitly — `node --test <dir>` fails in this sandbox because it spawns
+  children). **Add every new suite to the `test` script.**
+- `tsconfig`: `nodenext` module/resolution, `strict`,
+  `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` (omit optional
+  properties rather than assigning `undefined`), `noImplicitOverride`.
+- `.npmrc` pins the npm cache to `.npm-cache`; the global cache is outside the
+  sandbox and fails with EPERM.
+- `userdocs/` is the user's own notes on Lisp — not project material, leave it
+  alone unless asked.
 
 ## Layout
 
 | file | role |
 |---|---|
-| `reader.ts` | cursor factory, `parse`/`parseAll`/`next`, AST types (`AtomNode`, `ListNode`, `QuoteNode`); comments are trivia and are discarded |
-| `errors.ts` | `ReaderError`, `LispEvalError`, code unions |
-| `values.ts` | `LispValue` union, `NIL`, `Env`, `Place`, `intern` |
-| `builtins.ts` | builtin table (`min`/`max` arities) and `applyBuiltIn` |
-| `interpreter.ts` | `evaluate`, special forms, `callValue`, `SPECIAL_FORMS`, `withStepCeiling`, observer hooks |
-| `standard-symbols.ts` | ANSI names the evaluator does not implement |
-| `print.ts` | `printValue` — SBCL-faithful rendering with `...`/`#` truncation |
-| `bindings.ts` | `recordBindings`/`snapshotAt` — the value run and snapshots |
-| `hints.ts` | `collectHints` — per-line and per-cursor values |
+| `reader.ts` | cursor factory, `parse`/`parseAll`, AST (`AtomNode`, `ListNode`, `QuoteNode`), `#\` characters, `#(` vectors, comments as trivia |
+| `errors.ts` | `ReaderError`, `LispEvalError`, `EvalErrorCode` |
+| `values.ts` | `LispValue` union (`symbol`, `number`, `string`, `char`, `nil`, `cons`, `array`, `struct`, `hash`, `stream`, `values`, `function`, `builtin`), `NIL`, `Env`, `Place`, `intern` |
+| `builtins.ts` | builtin table, `applyBuiltIn`, `expect*` helpers, hash-key canonicalisation |
+| `interpreter.ts` | `evaluate`/`evaluateRaw`, special forms, `callValue`, `SPECIAL_FORMS`, budget, places, LOOP executor, multiple-value forms, `sort`/`maphash`/`apply`/`funcall` |
+| `loop.ts` | LOOP clause types and parser only; executor lives in `interpreter.ts` |
+| `standard-symbols.ts` | ANSI names Lispnt knows but does not implement — keep it true |
+| `print.ts` | `printValue` with `princ` mode, `#S(…)`, `#<hash-table …>`, truncation |
+| `bindings.ts` | `recordBindings`/`snapshotAt` |
+| `hints.ts` | `collectHints`, `formatHint`/`formatLine` |
 | `scopes.ts` | scope model, file symbol table, `walkWithScopes`, `OPAQUE_FORMS`, `symbolWord` |
-| `name-checks.ts` | static name checks (undefined/unbound/variable-as-function/arity) |
-| `checks.ts` | AST shape checks (`defun`, `lambda`, `let`, `labels`, `flet`) |
+| `name-checks.ts` | undefined/unbound/variable-as-function/arity checks |
+| `checks.ts` | AST shape checks |
 | `diagnostics.ts` | `Diagnostic`, message tables, error→diagnostic |
 | `analyze.ts` | entry point: parse → shape checks → evaluation → static name checks |
-| `trace.ts` | `traceCalls`/`traceFormIn`, `TraceFrame`, `renderTrace` |
-| `trace-cases.ts` | `traceCases` — the `;;[trace]` comment marker |
+| `trace.ts` | `traceCalls`/`traceFormIn`, `renderTrace`, `EXPLAIN_TRACE`, `TraceFrame` |
+| `trace-cases.ts` | `traceCases` — the `;;[trace]` / `;;[trace:N]` marker |
 
 Layering: `reader/values/errors → builtins → interpreter`, then consumers above
-it (`bindings`, `hints`, `scopes`, `trace`, `trace-cases`), with
-`name-checks` above `scopes` and `analyze` on top. `builtins.ts` must not import
-`interpreter.ts`; that is why `APPLY`/`FUNCALL` are registered in
-`interpreter.ts` where `callValue` lives.
+it (`bindings`, `hints`, `scopes`, `trace`, `trace-cases`), `name-checks` above
+`scopes`, `analyze` on top.
+
+**Hard rules:** `builtins.ts` must not import `interpreter.ts` — that is why
+`APPLY`, `FUNCALL`, `MAPHASH` and `SORT` are registered in `interpreter.ts`
+where `callValue` lives. `loop.ts` imports neither; it is pure parsing.
+
+## Decisions worth not rediscovering
+
+**Characters.** A character is its own value kind (`{ kind: "char" }`); it is
+not a string and not a number (`(equal #\a "a")` is NIL, `(typep #\a
+'character)` is T). Case is part of the value; character names are
+case-insensitive (`#\Space` is `#\space`). Prints as `#\a`, `#\A`,
+`#\Newline`, `#\Tab`; the space character prints as `#\Space` where SBCL prints
+`#\` plus an invisible space. `eq` compares characters by code, as SBCL answers.
+
+**Structures.** `DEFSTRUCT` is evaluated: `{ kind: "struct"; type; slots }`,
+slots in definition order. Generates the keyword constructor `MAKE-NAME`, the
+predicate `NAME-P`, the copier `COPY-NAME`, and one accessor per slot, with
+`:conc-name nil` giving bare slot names. Accessors are `setf` places. `:include`,
+other defstruct options, and slot options such as `:type` are
+`unsupported-standard`. Prints `#S(NAME :SLOT value …)`, compares by identity
+(`equal` does not descend; `equalp` here does not either — a recorded
+divergence), and answers `TYPEP` once defined. Keyword arguments in constructors
+only for now; lambda lists are the next slice.
+
+**LOOP — a deliberate subset, and it fails loudly.** Implemented:
+`(loop form…)`; `for`/`as` with `in`, `on`, `across`, and numeric
+`from`/`to`/`below`/`above`/`by`; `while`, `until`, `repeat`; `do`,
+`collect`, `append`, `sum`, `count`, `maximize`, `minimize`, each with `into`;
+`initially`, `finally`, `return`; `if`/`when`/`unless` with `else`, `and`,
+`end`. Any other clause word — `named`, `with`, `thereis`, `always`, `never`,
+`nconc`, `being`, `using` — is `unsupported-standard`, never silently skipped.
+Semantics: drivers step in parallel and bind before the termination test;
+`into` leaves the loop's value NIL unless a `finally` returns; `finally` does
+not run when `return` exits; clauses sharing an implicit accumulator of the same
+kind share one value, while two different kinds are an error — all verified
+against SBCL. Shape rules enforced as SBCL does: a driver may not follow a main
+clause or sit inside a conditional body, and `do`/`initially`/`finally` take
+compound forms. **Full LOOP syntax was rejected**: measured demand is 9 forms in
+5 files and four of those need hash tables, multiple values or defstruct.
+
+**Hash tables.** `{ kind: "hash"; test; entries }`. `:test` is one of `eq`,
+`eql`, `equal`, `equalp`; a key is found again through a canonical form chosen
+by the test — atoms by value, `eq`/`eql` cons/array/struct keys by identity,
+`equal`/`equalp` by full printed form (not the truncated REPL form). `equalp`
+is treated as `equal`. Printing is `#<hash-table :count n>`; iteration order is
+insertion order, which CL leaves unspecified. `LOOP`'s hash drivers walk it.
+
+**FORMAT.** `(format destination control args…)` implements `~a`, `~s`, `~d`,
+`~%`, `~~`, `~&`; `nil` returns the string, `t` returns NIL and discards (no
+console), a stream destination writes into the stream. **Two-tier failure:** a
+directive ANSI defines but Lispnt has not built (`~b`, `~x`, `~r`, `~p`, `~c`,
+`~t`, the iteration and justification clusters) is `unsupported-standard`; a
+character that is not a directive at all (`~q`) is `malformed-form`. Parameters
+and modifiers (`~5d`, `~:@a`) are `unsupported-standard`. `~a` is princ-style —
+a `princ` option on `printValue`.
+
+**Streams.** `with-output-to-string` binds a string output stream and returns
+what was written; `write-char`, `write-string`, `princ`, `prin1` append and
+return their object; `princ-to-string`/`prin1-to-string` return text. With no
+stream argument text is discarded — there is no `*standard-output*`, the same
+divergence as `format t`. `typep` answers `stream`.
+
+**Sequences.** `car`/`cdr` of NIL are NIL; any other non-list is a
+`type-error`. `length` and `elt` read strings (a string is a sequence of
+characters). `getf` has a default and is a `setf` place (update in place, or
+cons a new pair on the front); a non-list plist is a `type-error` and a lone
+trailing indicator is `malformed-form`. `sort` takes two arguments, covers
+lists, vectors and strings, **copies** rather than mutating (so a recorded
+snapshot cannot change under a hint) and is stable (a harmless superset of CL).
+`string<` compares string designators. The `gethash` place honours its default,
+which is what lets `(incf (gethash k table 0))` start from zero.
+
+**Multiple values.** A values bundle exists internally but never reaches a
+single-value context: `evaluate` takes the primary. `multiple-value-bind`,
+`multiple-value-list` and `multiple-value-setq` are special forms (CL has them
+as macros) because each needs its operand unevaluated; missing values bind to
+NIL. `gethash` answers present-p and `floor` its remainder. The trace prints
+every value a call returned (`F() => 1 2`), matching SBCL's trace; the call
+observer receives the body's raw result while callers get the primary.
+
+**Budgets.** `HARD_STEP_CEILING = 2_000_000` is a never-exceeded backstop.
+`withStepCeiling` takes a per-pass ceiling in `1 … HARD`, refuses a second open
+pass, and restores state in `finally`. The counter is **scoped to the outermost
+evaluation when no pass is open**, so a budget error thrown outside a pass
+cannot leave it above the ceiling and disable every later evaluation — a bug
+that once turned one stale test into twenty-six failures. **LOOP charges one
+step per iteration**, so a loop whose body evaluates nothing still stops; before
+that, `(loop)` was uninterruptible and hung a test run for half an hour.
+
+**Diagnostics.** Severity describes the program's execution, not SBCL's compile
+status — a deliberate divergence: red means "this fails when reached", yellow
+means "the name may come from outside this file". `error`: `variable-as-function`,
+arity against a uniquely defined name, arity against a builtin. `warning`:
+`undefined-function`, `unbound-variable`, arity when a name is defined more than
+once. Silent: standard-but-unimplemented names, globals called as functions,
+`*special*` names, keyword arguments, `(load …)` files. `analyze` drops the
+evaluator's own `undefined-function`, `unbound-variable` and `arity`; the static
+checker owns those. Runtime-only codes stay with evaluation.
+
+**Opaque forms (checker-side).** `defclass`, `defgeneric`, `defmethod`,
+`defmacro`, `deftype`, `defpackage`, `with-slots`, `with-accessors`,
+`handler-bind`, `restart-case`, `macrolet`, `symbol-macrolet`. The walk stops at
+them, so their contents are unchecked rather than misreported.
+
+**`STANDARD_SYMBOLS` must stay true.** 189 names now. Implemented names were
+removed across several slices; `WRITE-CHAR` and `SORT` are the two known
+leftovers, recorded in the planned cleanup. A name in the list is silent when
+called, so leaving an implemented one there hides arity checks.
+
+**Rejected, with reasons (do not re-propose without new evidence):** a static
+value tier; test-case inference; a REPL/scratchpad; a static call graph; full
+LOOP clause syntax; `LOAD` (harness-only corpus use, and it needs a path on
+`analyze`/`trace-cases`, a separate budget, a load-cycle guard, and a file field
+on `Diagnostic` that does not exist).
 
 ## Working conventions
 
-**Permission.** No code without an explicit instruction; "go ahead" is one. If
-an instruction is vague, stop and ask. Ask before anything that mutates the repo
-outside the current slice (branch work, force operations, history rewrites).
+**Permission.** No code without an explicit instruction; "go ahead" is one. If a
+slice is proposed, it gets an outline and waits for approval. If something goes
+wrong mid-work, **halt and explain the problem** — see the Agent working rules
+in `ROADMAP.md`, which include the time bounds for runaway commands.
 
-**Commits.** One commit per completed slice, with `ROADMAP.md` edits folded in:
-roadmap text describing unshipped work lands with the code that ships it. Docs
-edits that are not `ROADMAP.md` (this handoff, corrections) may stand alone.
-A roadmap note about unshipped work waits for the next code commit; that is the
-only reason the roadmap is ever dirty.
+**Commits.** One commit per completed slice, with `ROADMAP.md` text describing
+that slice folded in. Doc-only edits (this file, corrections) may stand alone. A
+roadmap note about unshipped work waits for the next code commit — that is the
+only reason the roadmap is ever dirty. Record shipped items under M3-EXTRA's
+`Shipped` and move them out of `Planned` in the same commit.
 
-**Outlines.** The user does not write the code now. Since M4-STATIC the preferred
-outline is compact: changes per file, decisions, test list, sizes — no full
-pseudocode unless asked. For a new subsystem, one paragraph of mechanism plus
-the decisions is enough.
+**Outlines.** The user does not write the code. Preferred outline: changes per
+file, genuine decisions, test list, sizes. Do not pad a decision list with
+choices where one option is plainly correct; state the call and move on.
 
-**Output honesty.** When showing test or tool output, paste it verbatim. Short
-outputs are shown in full, never abbreviated; only genuinely large ones get a
-head/tail excerpt, and that must be labelled as an excerpt. No hand-retyped
-output.
+**Output honesty.** Paste test and tool output verbatim. Short outputs in full,
+never abbreviated; only genuinely large ones get a labelled head/tail excerpt.
 
-**Naming and words.** Do not invent shorthand without asking; say what a thing
-is in plain words. Prefix exported types/classes (`LispValue`, `ReaderError`,
-`LispEvalError`) because JS/DOM globals include `EvalError`, `Node`, `Element`,
-`Event`, `Text`, `Range`, `File` (a real bug came from `EvalError`). TS 7's npm
-package ships no `lib.*.d.ts`, so that list cannot be grepped locally.
-
-**Tone.** Short answers; explain only when asked; halt and ask rather than guess.
-
-## Locked decisions
-
-Reader and values:
-
-- Fidelity over desugaring: `'x` stays a `QuoteNode` (`quoteKind` `'` or `#'`).
-- `#(…)` vector literals are `ListNode` with `prefix`, and self-evaluate.
-- Dotted pairs: `ListNode.tail`; two reader codes for bad dots.
-- Symbols interned uppercase; keywords self-evaluate.
-- Reader gaps still open: `#\` character literals and ratios (`14/5`) arrive as
-  symbols. The checker skips them; the evaluator has no char type.
-- `eq` is identity plus number/string value comparison.
-
-Interpreter:
-
-- `setf` uses a `Place` abstraction (`get`/`set` closures) over symbols, `aref`,
-  `car`, `cdr`; `push` is binary; `pop` reads.
-- `labels` closes over its own scope; `flet` closes over the outer env.
-- Single namespace for variables and functions (unlike CL). A parameter holding
-  a function can be called here; the checker still reports a parameter called as
-  a function, because CL would.
-- `unsupported-standard` is silent: our gap, not the learner's.
-- `(load …)` suppresses `undefined-function`.
-
-Budgets:
-
-- `HARD_STEP_CEILING = 2_000_000` is a never-exceeded backstop. `withStepCeiling`
-  takes a per-pass ceiling in `1 … HARD`, throws `RangeError` outside it, refuses
-  a second open pass, and restores state in `finally`. `analyze` runs at the
-  backstop; the value run and trace run at 200,000 steps. The counter is
-  module-level.
-- Budget wording, if surfaced: "1,000+ iterations" for loops, "1,000+ calls, N
-  levels deep" for recursion, "1,000+ evaluations" otherwise. "Recursions" is
-  not the count noun. A budget hit must read as a warning, not an error.
-
-Diagnostics (static checks):
-
-- Severity describes the program's execution, not SBCL's compile status — a
-  deliberate divergence, documented in the roadmap: red means "this fails when
-  reached", yellow means "the name may come from outside this file".
-- **error**: `variable-as-function` (parameters/locals only), arity when the name
-  is defined exactly once in the file, arity against a builtin.
-- **warning**: `undefined-function`, `unbound-variable`, arity when the name is
-  defined more than once.
-- **silent**: standard-but-unimplemented names, globals called as functions,
-  `*special*` names, keyword arguments, `(load …)` files for undefined functions,
-  and files defining a `defstruct` with `:include` or another unmodelled option.
-- `analyze` drops the evaluator's own `undefined-function`, `unbound-variable`
-  and `arity` diagnostics; the static checker owns those three codes. Runtime-only
-  codes (`type-error`, `division-by-zero`, `index-error`, `malformed-form`,
-  `not-a-place`, `evaluation-budget`) still come from evaluation.
-
-Opaque forms (checker-side decoding):
-
-- `OPAQUE_FORMS` are standard forms whose binding syntax we do not model. The
-  walk stops at them, so their contents are unchecked rather than misreported.
-  Remaining: `defclass`, `defgeneric`, `defmethod`, `defmacro`, `deftype`,
-  `defpackage`, `with-slots`, `with-accessors`, `multiple-value-setq`,
-  `handler-bind`, `restart-case`, `macrolet`, `symbol-macrolet`.
-- Decoded for the checker: `defstruct` (constructor/predicate/copier/accessors
-  registered in the symbol table; `:include` keeps the file suppressed),
-  `do`/`do*`, the `case` family, and the binding macros.
-- **The evaluator has none of those decodings.** `defstruct`, `do`/`do*`, the
-  `case` family and the binding macros are checker-only; at run time the form
-  throws `unsupported-standard` and is skipped, so its generated names never
-  exist. This is why tree-lab traces fail with `undefined-function`. Slice A and
-  Slice B below are the fix.
-
-Values and hints:
-
-- Hints annotate **uses**: a name shows a value where it is read, taken from the
-  snapshot containing that use (most recent call wins). One hint per name per
-  line; no hint on a line that binds the name; builtins, `T`/`NIL` and unbound
-  names are silent.
-- Hints report **what executed**. Measured: only 7 of 41 corpus files produce any
-  hint; inside a function nothing calls, only globals appear, at definition-time
-  values; a value read after mutation in the same form can be stale (snapshots
-  copy binding maps, not the values in them).
-- Print limits for hints are `printValue`'s (8 elements, depth 3), overridable
-  per call. Provisional until user testing.
-- Hints are not built on the static checker: static analysis knows names and
-  scopes, not values.
-
-Trace:
-
-- Only user functions are recorded (builtins bypass the observer); arguments and
-  results are printed at call time, not render time.
-- Caps: 200,000 steps, depth 64, 1,000 frames. Past a cap evaluation continues,
-  recording stops, `truncated` is set. The depth cap exists because JS overflows
-  at roughly 800 Lisp calls (measured, and it varies run to run); 64 is a
-  deterministic policy well inside it.
-- `;;[trace]` marker: line comment, bracketed, then one form; whitespace and case
-  tolerated; block comments are ignored. Each marker is an independent case,
-  evaluated against a freshly loaded copy of the file. An unreadable marker is
-  reported as `unreadable`, not as a diagnostic.
-- Rendering today: `NAME(args) => result`, two spaces per depth, `!! code` on the
-  failing frame, `…` footers. **Known cosmetic defect:** SBCL prints the return
-  on its own line *after* the subtree; ours puts `=> result` on the entry line,
-  so it reads in reverse. Recorded in the roadmap for a later fix.
-- A display limit (`[trace:N]`, `[trace:all]`, 10 per level, first N + hidden
-  count + last entry) was specified and approved but **is not implemented**; the
-  renderer currently shows every recorded frame.
-
-Rejected, with reasons (do not re-propose without new evidence):
-
-- **Static value tier** (constants or symbolic definitions): 35 of 77 corpus
-  locals are literal, 11 computable, 31 input-dependent, and all 286 parameters
-  have no static value. Constants restate the source, the pattern appears
-  inconsistently, and a learner cannot explain the inconsistency without scope
-  and closure rules they are still learning. Values stay a runtime observation.
-- **Test-case inference**: signatures give arity, not domains; "valid" is
-  undecidable. The learner writes the case.
-- **A REPL / scratchpad**: out of scope by design. The `;;[trace]` marker gives
-  runtime evidence without one.
-- **A static call graph**: prototyped, showed self and mutual recursion without
-  running anything, but it cannot say which branch ran, depth, arguments or
-  results — the trace is the useful artifact.
+**Naming.** Do not invent shorthand without asking. Prefix exported types and
+classes (`LispValue`, `ReaderError`, `LispEvalError`) because JS/DOM globals
+include `EvalError`, `Node`, `Element`, `Event`, `Text`, `Range`, `File`.
 
 ## Next steps
 
-Two slices, in order, then a backlog.
+Both are recorded in `ROADMAP.md` under M3-EXTRA `Planned`; start with the first.
 
-**Slice A — evaluator gaps, cheap part.** Builtins `1+`, `1-`, `MAX`, `MIN`,
-`COUNT`, `BUTLAST`, `SCHAR`, `CHAR`, `CHAR=`, `CHAR-UPCASE`, `ERROR`; special
-forms `DO`/`DO*` and the `CASE` family. Corpus counts: `1+` 20 occurrences, `1-`
-13, `MAX` 4, `SCHAR` 6, `CHAR=` 3, `ERROR` 11, `CASE` 3, `DO` 2. About 150 lines
-and 30 tests. `DEFSTRUCT` stays out — it needs its own slice.
-
-**Slice B — `defstruct` for the evaluator.** A struct value (new `LispValue`
-kind with type name and slots), the special form defining constructor, predicate,
-copier and accessors, printing as `#S(NAME :SLOT value …)`, and equality. Touches
-`values.ts`, `interpreter.ts`, `print.ts`, equality paths. This is what makes the
-binary-tree labs traceable.
-
-Backlog, in rough value order:
-
-1. Trace render fix: move `=> result` onto an exit line after the subtree,
-   optionally adopt SBCL's depth-numbered layout.
-2. The approved-but-unimplemented trace display limit (`[trace:N]`,
-   `[trace:all]`, per-level 10, hidden count, always show the last entry;
-   clamp N to the 1,000-frame cap).
-3. `FORMAT` (18 occurrences, mostly test harnesses) — a `~a ~s ~% ~d` subset.
-4. `GETF`, `SORT`, hash tables, multiple values, `WITH-OUTPUT-TO-STRING`, `LOAD`.
-5. `LOOP` evaluation — its own milestone-sized item.
-6. Decode remaining opaque forms only if learner code uses them.
-7. Unused bindings, type inference, call-site positions in traces, a counting
-   mode for very large call trees.
-8. M6: extension shell + diagnostics, then hints, then trace surfaces. The
-   extension lives in this repo, not a separate package.
+1. **Lambda lists.** `&optional` (defaults, supplied-p), `&rest`/`&body`, `&key`
+   (defaults, supplied-p, `((:kw name) …)`), `&aux`; `&allow-other-keys` out.
+   The checker's arity rule must follow: `min` = required count, `max` unbounded
+   once `&key`/`&rest` appears, or keyword calls become false arity reports.
+2. **Builtin keyword arguments.** One shared parser (unknown key
+   `unsupported-standard`, odd count `malformed-form`, non-keyword `type-error`):
+   `sort :key`; `count :test`/`:key`; `make-array :initial-element`,
+   `:initial-contents`, `:adjustable`, `:fill-pointer` (`:element-type`
+   refused); `make-hash-table :size` and the rehash hints accepted as hints
+   because CL gives them no observable effect; `vector-push`,
+   `vector-push-extend`, `make-string`. The array gains an optional fill pointer:
+   `length` honours it, `aref` stays capacity-bounded, printing shows the filled
+   part. Plus `with-hash-table-iterator` (needs multiple values, which exist) and
+   the `WRITE-CHAR`/`SORT` silent-list cleanup.
+3. **M6**, the extension shell.
 
 ## How to check the corpus
 
-There is no committed script. After `npm run build`, walk
-`lisp_test_files/` and `G:\My Drive\Labs\CPS305` for `*.lisp`/`*.lsp`, then for
-each file run `analyze` from `dist/src/core/analyze.js` (and, when relevant,
-`checkNames`, `collectHints`, or `traceCases`). Report counts by code and file.
-Reads from `G:` work under the sandbox; nothing is written.
+No committed script. After `npm run build`, walk `lisp_test_files/` and
+`G:\My Drive\Labs\CPS305` for `*.lisp`/`*.lsp` (skip `backup`), and for each file
+run `analyze` from `dist/src/core/analyze.js`; report counts by code and file.
+Expected: 40 files, 10 diagnostics, as above.
 
-`test/reader.test.ts` asserts that `lisp_test_files/reader_smoke.lisp` parses to
-exactly 6 forms and inspects form 2, and other tests assert form counts on
-`recursion_nested_lists.lisp`. Editing those fixtures means updating the tests;
-new fixtures for diagnostics or traces belong in new files rather than in the
-reader fixtures.
+Trace spot-checks that should hold (all verified against SBCL):
+
+| file | call | result |
+|---|---|---|
+| `patterns_test2/list_search.lisp` | `(LEVEL-ORDER '(1 (2 (3)) 4))` | `(1 2 4 3)` |
+| `lisp/patterns.lisp` | `(LEVEL-ORDER '(1 (2 (3)) 4))` | `(1 2 4 3)` |
+| `lisp/practicum2-all-topics.lisp` | `(AVERAGE-LIST-LOOP '(1 2 3 4))` | `2.5` |
+| `lab08-practice/q4.lisp` | `(BTREE-COLLECT-BFS …)` | `(1 2 3)` |
+| `lab08-practice/q3.lisp` | `(BTREE-HEIGHT …)` | `2` |
+| `lisp/patterns.lisp` | `(TABLE-SUM *t*)` over `("a" 1) ("b" 2)` | `3` |
+| `lisp/patterns.lisp` | `(TABLE-KEYS *t*)` | `("a" "b")` |
+| `lisp/patterns.lisp` | `(UPPER-STRING "abc")` | `"ABC"` |
+| `lisp/practicum2-all-topics.lisp` | `(GRADE-LETTERS #(90 45 72 88))` | `"AFBA"` |
+
+The last one matters: the file's own comment says `"ACBA"`, and SBCL agrees with
+`"AFBA"` — the comment is the bug, not the evaluation. `print-pairs-do` still
+stops at `with-hash-table-iterator`; that is planned, not a regression.
