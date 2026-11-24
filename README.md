@@ -19,9 +19,8 @@ SBCL. It is a linter, not an implementation.
 Messages are written as repairs rather than verdicts. Where SBCL says
 `0 is not a symbol and cannot be used as a local variable`, Lispnt says:
 
-> LET bindings need a pair of brackets each: write `((x 0))` so `X` is bound to
-> `0`. As written, LET reads `X`, then takes `0` as a second binding, which
-> fails.
+> LET bindings need a pair of brackets each: write ((x 0)) so X is bound to 0.
+> As written, LET reads X, then takes 0 as a second binding, which fails.
 
 What it finds today:
 
@@ -44,8 +43,8 @@ What it finds today:
   those warnings are dropped when the file's own recovered text defines the
   name, while warnings the file really has stay.
 - **Malformed shapes.** `defun`, `lambda`, `let`/`let*` and `flet`/`labels`
-  forms whose parts are missing or in the wrong place, each saying where the
-  missing piece belongs.
+  forms whose parts are missing or in the wrong place, and the operand count of
+  the common special forms, each saying where the missing piece belongs.
 - **Names.** Undefined functions, unbound variables, a variable called as a
   function, and argument counts — over every body in the file, whether or not
   anything calls it.
@@ -85,6 +84,9 @@ npm run build
 npx @vscode/vsce package --no-dependencies
 ```
 
+`vsce` also needs a `repository` field in `package.json`, because the README
+links to `LICENSE`; packaging waits until the repository URL exists.
+
 ## Development
 
 ```
@@ -95,14 +97,14 @@ npm test           # builds, then runs each suite in turn
 npm run bench      # timings over the corpus and a synthetic size ladder
 ```
 
-`npm test` runs fourteen suites — 762 tests — in a couple of seconds. F5 from
+`npm test` runs fourteen suites — 819 tests — in a couple of seconds. F5 from
 this folder starts an Extension Development Host with Lispnt loaded
 (`.vscode/launch.json`).
 
-Measured on a 44-file corpus (80.8 KB): parsing takes 1.7 ms, analysis 7.5 ms,
-value hints 10.8 ms and tracing 0.6 ms in total. The largest file, 19.6 KB,
-analyses in 1.9 ms. Hint runs are the part that does not scale linearly — 1.3 ms
-at 5.8 KB, 12 ms at 30 KB, 135 ms at 123 KB — because each finished form copies
+Measured on a 63-file corpus (87.3 KB): parsing takes 1.9 ms, analysis 8.8 ms,
+value hints 11.4 ms and tracing 0.6 ms in total. The largest file, 19.6 KB,
+analyses in 1.9 ms. Hint runs are the part that does not scale linearly — 1.2 ms
+at 5.8 KB, 12.8 ms at 30 KB, 140 ms at 123 KB — because each finished form copies
 the binding map, so the extension caches one run per document version.
 
 ## Layout
@@ -114,7 +116,7 @@ the binding map, so the extension caches one run per document version.
 | `src/extension.ts` | the one file that imports `vscode` for value |
 | `src/extension/` | wiring, diagnostics presentation, trace view model, hint providers |
 | `examples/diagnostics/` | one file per mark the extension can show |
-| `lisp_test_files/` | fixtures, including the manual bracket test bed |
+| `lisp_test_files/` | fixtures, including the deliberate broken files in `bracket_mismatch/` |
 | `bench/` | the timings above |
 
 The core is testable in plain Node, which is why the editor is behind that seam.
