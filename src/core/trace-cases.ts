@@ -26,6 +26,22 @@ export interface EmptyTraceMarker {
   readonly offset: number;
 }
 
+// The expressions the markers name, without running them. The hint pass uses
+// this to evaluate the calls a learner already asked to inspect, so a traced
+// function body has values even though the file never calls it.
+export function traceExpressions(source: string): string[] {
+  const found: string[] = [];
+
+  for (const line of source.split(/\r?\n/)) {
+    const match = MARKER.exec(line);
+    if (match === null) continue;
+    const expression = (match[2] ?? "").trim();
+    if (expression !== "") found.push(expression);
+  }
+
+  return found;
+}
+
 // A marker with nothing after it is the common first mistake: the syntax reads
 // like a switch, but it names the call to follow. The analyzer turns these into
 // warnings so the editor can underline and explain them.

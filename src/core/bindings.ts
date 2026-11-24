@@ -31,7 +31,10 @@ export interface BindingsResult {
 const BINDINGS_STEP_CEILING = 200_000;
 const SNAPSHOT_LIMIT = 20_000;
 
-export function recordBindings(source: string): BindingsRun {
+export function recordBindings(
+  source: string,
+  calls: readonly string[] = [],
+): BindingsRun {
   let forms: AstNode[];
   try {
     forms = parseAll(source);
@@ -65,27 +68,42 @@ export function recordBindings(source: string): BindingsRun {
 
   withStepCeiling(BINDINGS_STEP_CEILING, () =>
     withObserver(observer, () => {
-      for (const form of forms) {
+      // A ;;[trace] call is evaluated too, in the same environment, so a body
+      // that only runs through a marker still has values for the hints.
+      const runForm = (form: AstNode): boolean => {
         try {
           evaluate(form, env);
+          return true;
         } catch (error) {
           if (error instanceof LispEvalError) {
             // A failing form is reported elsewhere: skip it so the rest of the
             // file still gets values. Only the budget ends the pass.
             if (error.code === "evaluation-budget") {
               unavailable = "budget";
-              break;
+              return false;
             }
-            continue;
+            return true;
           }
-          if (error instanceof ReturnSignal) continue;
+          if (error instanceof ReturnSignal) return true;
           // Deep recursion blows the JS stack before the ceiling trips.
           if (error instanceof RangeError) {
             unavailable = "budget";
-            break;
+            return false;
           }
           throw error;
         }
+      };
+
+      for (const form of forms) if (!runForm(form)) return;
+
+      for (const call of calls) {
+        let callForms: AstNode[];
+        try {
+          callForms = parseAll(call);
+        } catch {
+          continue;
+        }
+        for (const form of callForms) if (!runForm(form)) return;
       }
     }),
   );

@@ -151,3 +151,10 @@ test("does not share print options between two runs", () => {
   assert.deepEqual(texts(narrow.hintsForLine(2)), ["L = (1 2 ...)"]);
   assert.deepEqual(texts(wide.hintsForLine(2)), ["L = (1 2 3 4)"]);
 });
+
+test("evaluates the calls it is given, so a traced body has values", () => {
+  const source = "(defun d (x) (* x 2))\n;;[trace] (d 4)";
+  const run = collectHints(source, { calls: ["(d 4)"] });
+
+  assert.deepEqual(texts(run.hintsForLine(1)), ["X = 4"]);
+});

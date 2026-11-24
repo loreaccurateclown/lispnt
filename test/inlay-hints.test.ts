@@ -85,3 +85,13 @@ test("only answers for the lines the editor asked about", () => {
 
   assert.deepEqual(later, []);
 });
+
+test("runs the calls the ;;[trace] markers name, so a traced body has values", () => {
+  const source = "(defun d (x) (* x 2))\n;;[trace] (d 4)";
+  const hints = createInlayHintsProvider(() => true).provideInlayHints(
+    documentOf(source),
+    EVERYTHING,
+  );
+
+  assert.deepEqual(hints, [{ position: { line: 0, character: 16 }, label: "X = 4" }]);
+});

@@ -18,6 +18,9 @@ export interface ValueHint {
 export interface HintOptions {
   readonly maxElements?: number;
   readonly maxDepth?: number;
+  // Calls to evaluate after the file loads, which is how ;;[trace] markers give
+  // hints to a function body that the file never calls on its own.
+  readonly calls?: readonly string[];
 }
 
 export interface HintRun {
@@ -42,7 +45,7 @@ export function collectHints(source: string, options?: HintOptions): HintRun {
     maxDepth: options?.maxDepth ?? HINT_PRINT_OPTIONS.maxDepth,
   };
 
-  const run = recordBindings(source);
+  const run = recordBindings(source, options?.calls ?? []);
 
   let forms: AstNode[];
   try {

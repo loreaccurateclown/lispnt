@@ -1,4 +1,5 @@
 import { collectHints, formatHint, type HintRun } from "../core/hints";
+import { traceExpressions } from "../core/trace-cases";
 import type {
   VsInlayHint,
   VsInlayHintsProvider,
@@ -37,7 +38,13 @@ export function createInlayHintsProvider(
         cached.version !== document.version
       ) {
         const text = document.getText();
-        cached = { uri, version: document.version, text, run: collectHints(text) };
+        cached = {
+          uri,
+          version: document.version,
+          text,
+          // The markers give hints to bodies the file never calls itself.
+          run: collectHints(text, { calls: traceExpressions(text) }),
+        };
       }
 
       const { text, run } = cached;
