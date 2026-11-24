@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parse, parseAll, type AstNode } from "../src/core/reader";
+import { createReader, parse, parseAll, type AstNode } from "../src/core/reader";
 import { ReaderError } from "../src/core/errors";
 
 //Position and atoms tests
@@ -671,6 +671,21 @@ test("reports an unterminated block comment at the #", () => {
 
   assert.equal(error.code, "unterminated-block-comment");
   assert.deepEqual(error.position, { line: 1, column: 1, offset: 0 });
+});
+
+// parse() throws on a bad form; next() reports it, and analyze only ever calls
+// next(). skipTrivia used to run outside next()'s try, so an unclosed block
+// comment escaped as a crash and no diagnostic was produced.
+test("returns an unterminated block comment as an error from next", () => {
+  const reader = createReader("#| a");
+
+  const result = reader.next();
+  assert.equal(result.kind, "error");
+  if (result.kind !== "error") return;
+  assert.equal(result.error.code, "unterminated-block-comment");
+
+  // Recovery: the input is at its end, so the next call is the end.
+  assert.equal(reader.next().kind, "end");
 });
 
 test("reports empty input", () => {

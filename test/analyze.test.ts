@@ -46,6 +46,17 @@ test("reports an error that occurs after a valid first form", () => {
   assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 9, offset: 8 });
 });
 
+// An unclosed block comment used to escape reader.next() as a throw, which meant
+// analyze crashed and the learner saw a clean file.
+test("reports an unclosed block comment instead of crashing", () => {
+  const diagnostics = analyze("#| this comment never ends");
+
+  assert.deepEqual(
+    diagnostics.map((diagnostic) => diagnostic.code),
+    ["unterminated-block-comment"],
+  );
+});
+
 test("reports one diagnostic per stray closer", () => {
   const diagnostics = analyze(") ) )");
 
@@ -381,6 +392,7 @@ test("the diagnostic showcase still demonstrates what it claims", () => {
     "reader-stray-closer.lisp": ["stray-closer"],
     "reader-unterminated-list.lisp": ["unterminated-list"],
     "reader-unterminated-string.lisp": ["unterminated-string"],
+    "reader-unterminated-block-comment.lisp": ["unterminated-block-comment"],
     "reader-unexpected-eof.lisp": ["unexpected-eof"],
     "reader-dotted-tail.lisp": ["dotted-tail-extra-form", "stray-closer"],
     "shapes.lisp": [

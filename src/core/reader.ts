@@ -428,10 +428,13 @@ export function createReader(source: string): Reader {
   //   | { kind: "end" };
   function next(): NextResult {
     //approved of this function after discussing the cost/benefit of modular, reusable code with the fish. Harder to comprehend on the writer's end but much better from the execution end.
-    skipTrivia();
-    if (peek() === undefined) return { kind: "end" };
-
+    // skipTrivia belongs inside the try: an unterminated block comment is reported
+    // from there, and a throw escaping next() reached the caller as a crash
+    // instead of a diagnostic.
     try {
+      skipTrivia();
+      if (peek() === undefined) return { kind: "end" };
+
       return { kind: "node", node: readNode() };
     } catch (error) {
       if (!(error instanceof ReaderError)) throw error;

@@ -10,9 +10,10 @@ panel. Each file's header comment says what to expect.
   is Lispnt's gap, and blaming the learner for it would be a lie. `quiet.lisp`
   is the file that demonstrates that.
 
-One reader mistake currently produces no mark at all: an unclosed `#|` block
-comment throws out of the reader instead of being reported, so there is no file
-for it here until that is fixed.
+One reader mistake used to throw before it could be reported: an unclosed `#|`
+block comment escaped the reader as a crash, so the extension logged it to its
+output channel and the learner saw a clean file. That is fixed, and
+`reader-unterminated-block-comment.lisp` is the file that proves it.
 
 The files are outside `lisp_test_files/` and the CPS305 corpus on purpose, so
 they do not change the corpus diagnostics count.
