@@ -48,12 +48,19 @@ hints, 39 trace, 21 trace-cases).
 
 ## Agent working rules
 
-Added after a diagnosis ran for twenty-five minutes without a status line. They apply to any agent session in this repository, including after a handoff rewrite.
+The rule is one thing: **when something goes wrong, halt and explain the problem — what is known, what is not, and what would be tried next — and let the user decide how to proceed.** Everything below is a safety rail or a record of a session that failed to do that; none of them is a substitute for it.
 
-- **A command with no result after three minutes is killed and reported** — what was run, what was seen, and the smallest next question. No third attempt at the same thing.
-- **A test run past about twice the baseline is a hang, not a wait.** The full suite runs in under a minute; two minutes is the point to stop. A hang that survives two hypotheses gets handed back as a question, not a third hypothesis.
-- **No silent investigation longer than three minutes**, even mid-diagnosis. A status line costs nothing; a quarter of an hour of quiet does not.
-- **Bisection is the accepted technique** for a hang — split the suite, then the file, then the batch, and report which slice hangs. The method was never the problem; running it without checkpoints was.
+Safety rails:
+
+- A command with no result after three minutes is killed and reported. No third attempt at the same thing.
+- A test run past about twice the baseline is a hang, not a wait. The full suite runs in a couple of seconds; a minute of it is already wrong.
+- No silent investigation longer than three minutes, even mid-diagnosis.
+
+What the rails do not cover, learned the hard way. A diagnosis once hammered the test runner for half an hour looking for a hang that one `grep loop test/` found in seconds. They measure elapsed time, not whether the next action can distinguish the remaining hypotheses — and after a while it could not:
+
+- **Read the inputs before modelling the outputs.** When a change removes an assumption, the first thing to inspect is everything that relied on it. `(loop)` stopped being a form the evaluator skips, which invalidated a test that used `(loop)` as its example of one. That test was a suspect from the moment the change was made, not a victim found later.
+- **A result that invalidates the method is not a data point.** When a test that does nothing but `evaluate(parse("42"))` hung, no amount of bisecting by test name could localise anything. That was the point to stop and ask, not to gather another data point.
+- **More process is not a fix.** Rules about minutes and hypothesis counts create the feeling that a class of problem has been handled, which is how the same circling gets licensed again under a different heading. The rails above are for stopping runaway commands; judgement is the halt-and-explain rule at the top.
 
 ## Learning notes
 
