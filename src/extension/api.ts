@@ -54,10 +54,16 @@ export interface VsConfiguration {
   get(key: string): unknown;
 }
 
+// A read-only document the extension generates rather than reads from disk:
+// refresh() asks the editor to ask for the content again.
+export interface VsContentProvider extends VsDisposable {
+  refresh(uri: string): void;
+}
+
 export interface VsCodeApi {
   createOutputChannel(name: string): VsOutputChannel;
   createDiagnosticCollection(name: string): VsDiagnosticCollection;
-  registerCommand(id: string, run: () => void): VsDisposable;
+  registerCommand(id: string, run: () => void | Promise<void>): VsDisposable;
   onDidOpenTextDocument(listener: (document: VsTextDocument) => void): VsDisposable;
   onDidChangeTextDocument(
     listener: (event: { readonly document: VsTextDocument }) => void,
@@ -65,6 +71,11 @@ export interface VsCodeApi {
   onDidSaveTextDocument(listener: (document: VsTextDocument) => void): VsDisposable;
   onDidCloseTextDocument(listener: (document: VsTextDocument) => void): VsDisposable;
   getConfiguration(section: string): VsConfiguration;
+  registerTextDocumentContentProvider(
+    scheme: string,
+    provide: (uri: string) => string,
+  ): VsContentProvider;
+  showDocument(uri: string): Promise<void>;
   readonly activeTextDocument: VsTextDocument | undefined;
   readonly textDocuments: readonly VsTextDocument[];
 }

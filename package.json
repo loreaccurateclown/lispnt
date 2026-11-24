@@ -16,6 +16,10 @@
       {
         "command": "lispnt.checkFile",
         "title": "Lispnt: Check File"
+      },
+      {
+        "command": "lispnt.showTrace",
+        "title": "Lispnt: Show Trace"
       }
     ],
     "configuration": {

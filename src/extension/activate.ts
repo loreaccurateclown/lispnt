@@ -7,6 +7,7 @@ import type {
   VsTextDocument,
 } from "./api";
 import { presentDiagnostics } from "./present";
+import { formatTraceReport, TRACE_SCHEME, TRACE_URI } from "./trace-report";
 
 // A file is ours when the editor calls it Lisp, or when its name says so. The
 // second test matters when no Lisp extension is installed and the language id is
@@ -96,7 +97,36 @@ export function activateExtension(
     );
   };
 
+  // The trace view is a generated read-only document. Keeping the text in a map
+  // lets the provider answer with the latest report, and refresh() is how a
+  // second run replaces what the learner is looking at.
+  const traceText = new Map<string, string>();
+  const traceProvider = api.registerTextDocumentContentProvider(
+    TRACE_SCHEME,
+    (uri) => traceText.get(uri) ?? "",
+  );
+
+  const showTrace = async (): Promise<void> => {
+    const document = api.activeTextDocument;
+    if (document === undefined) {
+      channel.appendLine("Lispnt: no active document to trace");
+      return;
+    }
+
+    try {
+      const text = document.getText();
+      traceText.set(TRACE_URI, formatTraceReport(document.uri.fsPath, text));
+      traceProvider.refresh(TRACE_URI);
+      await api.showDocument(TRACE_URI);
+    } catch (error) {
+      channel.appendLine(
+        `Lispnt internal error while tracing ${document.uri.toString()}: ${String(error)}`,
+      );
+    }
+  };
+
   context.subscriptions.push(
+    traceProvider,
     api.onDidOpenTextDocument(refresh),
     api.onDidSaveTextDocument(refresh),
     api.onDidChangeTextDocument((event) => schedule(event.document)),
@@ -112,6 +142,7 @@ export function activateExtension(
       }
       refresh(document);
     }),
+    api.registerCommand("lispnt.showTrace", showTrace),
   );
 
   // Documents already open when the extension activates get checked too, so a

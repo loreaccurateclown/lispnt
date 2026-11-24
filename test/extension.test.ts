@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { activateExtension, isLispDocument } from "../src/extension/activate";
+import { formatTraceReport } from "../src/extension/trace-report";
 import type {
   VsCodeApi,
   VsDiagnostic,
@@ -39,23 +40,31 @@ interface Fake {
   readonly context: { subscriptions: VsDisposable[] };
   readonly collections: string[];
   readonly channels: string[];
-  readonly commands: Map<string, () => void>;
+  readonly commands: Map<string, () => void | Promise<void>>;
   readonly sets: Array<{ uri: VsUri; diagnostics: readonly VsDiagnostic[] }>;
   readonly deletes: VsUri[];
   readonly channelLines: string[];
+  readonly providers: Map<string, (uri: string) => string>;
+  readonly refreshes: string[];
+  readonly shown: string[];
   open(document: VsTextDocument): void;
   change(document: VsTextDocument): void;
   save(document: VsTextDocument): void;
   close(document: VsTextDocument): void;
+  setActive(document: VsTextDocument | undefined): void;
 }
 
 function fakeApi(options: FakeOptions = {}): Fake {
   const collections: string[] = [];
   const channels: string[] = [];
-  const commands = new Map<string, () => void>();
+  const commands = new Map<string, () => void | Promise<void>>();
   const sets: Fake["sets"] = [];
   const deletes: VsUri[] = [];
   const channelLines: string[] = [];
+  const providers = new Map<string, (uri: string) => string>();
+  const refreshes: string[] = [];
+  const shown: string[] = [];
+  let active = options.active;
 
   const openListeners: Array<(document: VsTextDocument) => void> = [];
   const changeListeners: Array<(event: { document: VsTextDocument }) => void> = [];
@@ -108,8 +117,18 @@ function fakeApi(options: FakeOptions = {}): Fake {
         return undefined;
       },
     }),
+    registerTextDocumentContentProvider: (scheme, provide) => {
+      providers.set(scheme, provide);
+      return {
+        refresh: (uri) => refreshes.push(uri),
+        dispose: () => undefined,
+      };
+    },
+    showDocument: async (uri) => {
+      shown.push(uri);
+    },
     get activeTextDocument() {
-      return options.active;
+      return active;
     },
     get textDocuments() {
       return options.open ?? [];
@@ -125,6 +144,9 @@ function fakeApi(options: FakeOptions = {}): Fake {
     sets,
     deletes,
     channelLines,
+    providers,
+    refreshes,
+    shown,
     open: (document) => {
       for (const listener of openListeners) listener(document);
     },
@@ -137,6 +159,9 @@ function fakeApi(options: FakeOptions = {}): Fake {
     close: (document) => {
       for (const listener of closeListeners) listener(document);
     },
+    setActive: (document) => {
+      active = document;
+    },
   };
 }
 
@@ -147,14 +172,15 @@ function activate(fake: Fake, debounceMs = 0): void {
 const wait = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
-test("registers one collection, one channel, four listeners and the command", () => {
+test("registers a collection, a channel, the listeners, a trace provider and two commands", () => {
   const fake = fakeApi();
   activate(fake);
 
   assert.deepEqual(fake.collections, ["lispnt"]);
   assert.deepEqual(fake.channels, ["Lispnt"]);
-  assert.deepEqual([...fake.commands.keys()], ["lispnt.checkFile"]);
-  assert.equal(fake.context.subscriptions.length, 8);
+  assert.deepEqual([...fake.commands.keys()], ["lispnt.checkFile", "lispnt.showTrace"]);
+  assert.deepEqual([...fake.providers.keys()], ["lispnt-trace"]);
+  assert.equal(fake.context.subscriptions.length, 10);
 });
 
 test("reports a mistake in an opened Lisp file", () => {
@@ -335,4 +361,84 @@ test("only the entry file imports vscode", () => {
   walk(join(root, "src"));
 
   assert.deepEqual(offenders, []);
+});
+
+const FACT = "(defun fact (n) (if (= n 0) 1 (* n (fact (1- n)))))";
+
+test("the trace report explains the marker when a file has none", () => {
+  const report = formatTraceReport("a.lisp", FACT);
+
+  assert.match(report, /No ;;\[trace\] call in this file/);
+  assert.match(report, /;;\[trace\] \(fact 4\)/);
+});
+
+test("the trace report renders every marked call", () => {
+  const report = formatTraceReport("fact.lisp", `${FACT}\n;;[trace] (fact 3)`);
+
+  assert.match(report, /;; Lispnt trace for fact\.lisp/);
+  assert.match(report, /;; line 2 {2}\(fact 3\)/);
+  assert.match(report, /root: 0: FACT\(3\) => 6/);
+  assert.match(report, /max depth: 3: FACT\(0\) => 1/);
+});
+
+test("the trace report honours the call limit on a marker", () => {
+  const source = [
+    "(defun d (x) (* 2 x))",
+    "(defun three (a) (+ (d a) (d (+ a 1)) (d (+ a 2))))",
+    ";;[trace:1] (three 1)",
+  ].join("\n");
+
+  const report = formatTraceReport("three.lisp", source);
+
+  assert.match(report, /root: 0: THREE\(1\) => 12/);
+  assert.match(report, /more call hidden/);
+});
+
+test("the trace report says when a marker does not hold a call", () => {
+  const report = formatTraceReport("bad.lisp", ";;[trace] (oops");
+
+  assert.match(report, /could not be read as an expression/);
+});
+
+test("the trace command writes the report and shows it beside the source", async () => {
+  const active = documentOf("a.lisp", `${FACT}\n;;[trace] (fact 3)`);
+  const fake = fakeApi({ active });
+  activate(fake);
+
+  await fake.commands.get("lispnt.showTrace")?.();
+
+  assert.deepEqual(fake.refreshes, ["lispnt-trace:/Trace"]);
+  assert.deepEqual(fake.shown, ["lispnt-trace:/Trace"]);
+
+  const provide = fake.providers.get("lispnt-trace");
+  assert.ok(provide !== undefined);
+  assert.match(provide("lispnt-trace:/Trace"), /root: 0: FACT\(3\) => 6/);
+});
+
+test("a second trace run replaces the panel and refreshes it again", async () => {
+  const fake = fakeApi({ active: documentOf("one.lisp", ";;[trace] (add 1 2)") });
+  activate(fake);
+
+  await fake.commands.get("lispnt.showTrace")?.();
+  fake.setActive(
+    documentOf("two.lisp", "(defun add (a b) (+ a b))\n;;[trace] (add 3 4)"),
+  );
+  await fake.commands.get("lispnt.showTrace")?.();
+
+  assert.equal(fake.refreshes.length, 2);
+  const provide = fake.providers.get("lispnt-trace");
+  assert.ok(provide !== undefined);
+  const content = provide("lispnt-trace:/Trace");
+  assert.match(content, /two\.lisp/);
+  assert.match(content, /ADD\(3, 4\) => 7/);
+});
+
+test("the trace command says so when there is no active document", async () => {
+  const fake = fakeApi();
+  activate(fake);
+
+  await fake.commands.get("lispnt.showTrace")?.();
+
+  assert.deepEqual(fake.shown, []);
+  assert.match(fake.channelLines[0] ?? "", /no active document to trace/);
 });

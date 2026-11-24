@@ -64,6 +64,31 @@ function adapter(): VsCodeApi {
     getConfiguration: (section) => ({
       get: (key) => vscode.workspace.getConfiguration(section).get(key),
     }),
+    registerTextDocumentContentProvider: (scheme, provide) => {
+      const changed = new vscode.EventEmitter<vscode.Uri>();
+      const registration = vscode.workspace.registerTextDocumentContentProvider(
+        scheme,
+        {
+          onDidChange: changed.event,
+          provideTextDocumentContent: (uri) => provide(uri.toString()),
+        },
+      );
+
+      return {
+        refresh: (uri) => changed.fire(vscode.Uri.parse(uri)),
+        dispose: () => {
+          registration.dispose();
+          changed.dispose();
+        },
+      };
+    },
+    showDocument: async (uri) => {
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
+      await vscode.window.showTextDocument(document, {
+        viewColumn: vscode.ViewColumn.Beside,
+        preview: true,
+      });
+    },
     get activeTextDocument(): VsTextDocument | undefined {
       return vscode.window.activeTextEditor?.document;
     },
