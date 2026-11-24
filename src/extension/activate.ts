@@ -7,6 +7,7 @@ import type {
   VsTextDocument,
 } from "./api";
 import { presentDiagnostics } from "./present";
+import { createInlayHintsProvider } from "./inlay-hints";
 import { formatTraceReport, TRACE_SCHEME, TRACE_URI } from "./trace-report";
 import { traceTree, type TraceNode } from "./trace-tree";
 
@@ -40,7 +41,16 @@ export function activateExtension(
     options.debounceMs ?? (typeof configured === "number" ? configured : 300);
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  context.subscriptions.push(channel, collection, {
+  // Inline value hints are the M4 story in the editor, and they run the file, so
+  // their own setting gates them; the diagnostics switch is about mistakes and
+  // does not have to turn values off as well.
+  const inlayHints = api.registerInlayHintsProvider(
+    createInlayHintsProvider(
+      () => api.getConfiguration("lispnt").get("showValueHints") !== false,
+    ),
+  );
+
+  context.subscriptions.push(channel, collection, inlayHints, {
     dispose: () => {
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();

@@ -54,6 +54,19 @@ export interface VsConfiguration {
   get(key: string): unknown;
 }
 
+// An inline hint the editor paints at a position, such as "X = 5".
+export interface VsInlayHint {
+  readonly position: VsPosition;
+  readonly label: string;
+}
+
+export interface VsInlayHintsProvider {
+  provideInlayHints(
+    document: VsTextDocument,
+    range: VsRange,
+  ): readonly VsInlayHint[];
+}
+
 // A read-only document the extension generates rather than reads from disk:
 // refresh() asks the editor to ask for the content again.
 export interface VsContentProvider extends VsDisposable {
@@ -90,6 +103,7 @@ export interface VsCodeApi {
   createOutputChannel(name: string): VsOutputChannel;
   createDiagnosticCollection(name: string): VsDiagnosticCollection;
   createTreeView<Item>(id: string, provider: VsTreeProvider<Item>): VsTreeView;
+  registerInlayHintsProvider(provider: VsInlayHintsProvider): VsDisposable;
   registerCommand(id: string, run: () => void | Promise<void>): VsDisposable;
   onDidOpenTextDocument(listener: (document: VsTextDocument) => void): VsDisposable;
   onDidChangeTextDocument(

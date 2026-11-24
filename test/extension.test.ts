@@ -10,6 +10,7 @@ import type {
   VsDiagnostic,
   VsDiagnosticCollection,
   VsDisposable,
+  VsInlayHintsProvider,
   VsOutputChannel,
   VsTextDocument,
   VsTreeItem,
@@ -35,6 +36,7 @@ function documentOf(
 interface FakeOptions {
   readonly enable?: boolean;
   readonly debounceMs?: number;
+  readonly showValueHints?: boolean;
   readonly active?: VsTextDocument;
   readonly open?: VsTextDocument[];
 }
@@ -59,6 +61,7 @@ interface Fake {
   readonly refreshes: string[];
   readonly shown: string[];
   readonly trees: FakeTree[];
+  readonly inlayProviders: VsInlayHintsProvider[];
   readonly contexts: Array<{ key: string; value: unknown }>;
   open(document: VsTextDocument): void;
   change(document: VsTextDocument): void;
@@ -80,6 +83,7 @@ function fakeApi(options: FakeOptions = {}): Fake {
   const refreshes: string[] = [];
   const shown: string[] = [];
   const trees: FakeTree[] = [];
+  const inlayProviders: VsInlayHintsProvider[] = [];
   const contexts: Fake["contexts"] = [];
   let active = options.active;
 
@@ -132,6 +136,10 @@ function fakeApi(options: FakeOptions = {}): Fake {
         dispose: () => undefined,
       };
     },
+    registerInlayHintsProvider: (provider) => {
+      inlayProviders.push(provider);
+      return { dispose: () => undefined };
+    },
     registerCommand: (id, run) => {
       commands.set(id, run);
       return { dispose: () => undefined };
@@ -160,6 +168,7 @@ function fakeApi(options: FakeOptions = {}): Fake {
       get: (key) => {
         if (key === "enable") return options.enable ?? true;
         if (key === "debounceMs") return options.debounceMs;
+        if (key === "showValueHints") return options.showValueHints ?? true;
         return undefined;
       },
     }),
@@ -197,6 +206,7 @@ function fakeApi(options: FakeOptions = {}): Fake {
     refreshes,
     shown,
     trees,
+    inlayProviders,
     contexts,
     open: (document) => {
       for (const listener of openListeners) listener(document);
@@ -242,7 +252,7 @@ test("registers the collection, channel, listeners, trace provider and four comm
     "lispnt.unpinTrace",
   ]);
   assert.deepEqual([...fake.providers.keys()], ["lispnt-trace"]);
-  assert.equal(fake.context.subscriptions.length, 15);
+  assert.equal(fake.context.subscriptions.length, 16);
 });
 
 test("reports a mistake in an opened Lisp file", () => {
@@ -686,4 +696,23 @@ test("the message carries the summary and the explanation stays in the text view
   const roots = fake.trees[0]?.provider.getChildren() as readonly TraceNode[];
   assert.equal(roots.length, 1);
   assert.equal(roots[0]?.label, "(fact 3)");
+});
+test("registers inline value hints and paints a parameter's value", () => {
+  const active = documentOf("a.lisp", "(defun f (x) (* x 2))\n(f 5)");
+  const fake = fakeApi({ active });
+  activate(fake);
+
+  assert.equal(fake.inlayProviders.length, 1);
+  const range = { start: { line: 0, character: 0 }, end: { line: 10, character: 0 } };
+  const hints = fake.inlayProviders[0]?.provideInlayHints(active, range);
+  assert.deepEqual(hints, [{ position: { line: 0, character: 16 }, label: "X = 5" }]);
+});
+
+test("the value hint setting turns them off", () => {
+  const active = documentOf("a.lisp", "(defun f (x) (* x 2))\n(f 5)");
+  const fake = fakeApi({ active, showValueHints: false });
+  activate(fake);
+
+  const range = { start: { line: 0, character: 0 }, end: { line: 10, character: 0 } };
+  assert.deepEqual(fake.inlayProviders[0]?.provideInlayHints(active, range), []);
 });

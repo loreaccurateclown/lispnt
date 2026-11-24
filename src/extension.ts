@@ -5,6 +5,8 @@ import type {
   VsCollapsibleState,
   VsDiagnostic,
   VsDiagnosticCollection,
+  VsInlayHint,
+  VsInlayHintsProvider,
   VsSeverity,
   VsTextDocument,
   VsTreeItem,
@@ -15,6 +17,16 @@ import type {
 // The only file that imports vscode for value. Everything it teaches the rest of
 // the extension is declared in ./extension/api, so the wiring can be tested
 // against a fake in a plain Node process.
+
+// Inlay hints are registered by selector, and a file with no Lisp extension
+// installed is plain text, so the patterns matter as much as the language id.
+const LISP_SELECTOR: vscode.DocumentSelector = [
+  { language: "lisp" },
+  { pattern: "**/*.lisp" },
+  { pattern: "**/*.lsp" },
+  { pattern: "**/*.cl" },
+  { pattern: "**/*.asd" },
+];
 
 const SEVERITY: Record<VsSeverity, vscode.DiagnosticSeverity> = {
   error: vscode.DiagnosticSeverity.Error,
@@ -97,6 +109,17 @@ function adapter(): VsCodeApi {
     createOutputChannel: (name) => vscode.window.createOutputChannel(name),
     createDiagnosticCollection,
     createTreeView,
+    registerInlayHintsProvider: (provider: VsInlayHintsProvider) =>
+      vscode.languages.registerInlayHintsProvider(LISP_SELECTOR, {
+        provideInlayHints: (document, range) =>
+          provider.provideInlayHints(document, range).map(
+            (hint) =>
+              new vscode.InlayHint(
+                new vscode.Position(hint.position.line, hint.position.character),
+                hint.label,
+              ),
+          ),
+      }),
     registerCommand: (id, run) => vscode.commands.registerCommand(id, run),
     onDidOpenTextDocument: (listener) =>
       vscode.workspace.onDidOpenTextDocument((document) => listener(document)),
