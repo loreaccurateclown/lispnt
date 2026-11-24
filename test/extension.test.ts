@@ -37,6 +37,7 @@ function documentOf(
 interface FakeOptions {
   readonly enable?: boolean;
   readonly debounceMs?: number;
+  readonly maxLength?: number;
   readonly active?: VsTextDocument;
   readonly open?: VsTextDocument[];
 }
@@ -174,6 +175,7 @@ function fakeApi(options: FakeOptions = {}): Fake {
       get: (key) => {
         if (key === "enable") return options.enable ?? true;
         if (key === "debounceMs") return options.debounceMs;
+        if (key === "inlayHints.maximumLength") return options.maxLength ?? 43;
         return undefined;
       },
     }),
@@ -747,4 +749,15 @@ test("the value hint toggle is per file", async () => {
   const range = { start: { line: 0, character: 0 }, end: { line: 10, character: 0 } };
   const other = documentOf("b.lisp", "(defun f (x) (* x 2))\n(f 5)");
   assert.deepEqual(fake.inlayProviders.at(-1)?.provideInlayHints(other, range), []);
+});
+test("a truncated hint carries its full text as a tooltip", async () => {
+  const active = documentOf("a.lisp", "(defun f (x) (* x 2))\n(f 5)");
+  const fake = fakeApi({ active, maxLength: 3 });
+  activate(fake);
+
+  await fake.commands.get("lispnt.showValueHints")?.();
+  const range = { start: { line: 0, character: 0 }, end: { line: 10, character: 0 } };
+  const hints = fake.inlayProviders.at(-1)?.provideInlayHints(active, range);
+  assert.equal(hints?.[0]?.tooltip?.length, 1);
+  assert.deepEqual(hints?.[0]?.tooltip, ["X = 5"]);
 });

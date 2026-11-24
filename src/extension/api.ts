@@ -54,11 +54,13 @@ export interface VsConfiguration {
   get(key: string): unknown;
 }
 
-// An inline hint the editor paints at a position, such as "X = 5".
+// An inline hint the editor paints at a position, such as "X = 5". tooltip
+// carries the full text in lines when the editor's length cap would truncate it.
 export interface VsInlayHint {
   readonly position: VsPosition;
   readonly label: string;
   readonly paddingLeft?: boolean;
+  readonly tooltip?: readonly string[];
 }
 
 export interface VsInlayHintsProvider {

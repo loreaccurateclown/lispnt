@@ -52,10 +52,19 @@ export function activateExtension(
   const hintRuns = createHintRuns();
   const valueHintFiles = new Set<string>();
 
+  // The editor truncates a line's hint text at this many characters, and 0 means
+  // no cap; reading it lets the tooltip appear exactly when a label will be cut.
+  const hintBudget = (): number => {
+    const configured = api.getConfiguration("editor").get("inlayHints.maximumLength");
+    return typeof configured === "number" ? configured : 43;
+  };
+
   const registerInlayHints = (): VsDisposable =>
     api.registerInlayHintsProvider(
-      createInlayHintsProvider(hintRuns, (document) =>
-        valueHintFiles.has(document.uri.toString()),
+      createInlayHintsProvider(
+        hintRuns,
+        (document) => valueHintFiles.has(document.uri.toString()),
+        hintBudget,
       ),
     );
 

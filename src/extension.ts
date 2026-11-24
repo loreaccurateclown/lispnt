@@ -119,6 +119,17 @@ function adapter(): VsCodeApi {
               hint.label,
             );
             if (hint.paddingLeft !== undefined) item.paddingLeft = hint.paddingLeft;
+            // One bullet per binding keeps the full text scannable in a hover,
+            // and appendText stops the Lisp names being read as markdown.
+            if (hint.tooltip !== undefined) {
+              const tooltip = new vscode.MarkdownString();
+              for (const line of hint.tooltip) {
+                tooltip.appendMarkdown("- ");
+                tooltip.appendText(line);
+                tooltip.appendMarkdown("\n");
+              }
+              item.tooltip = tooltip;
+            }
             return item;
           }),
       }),

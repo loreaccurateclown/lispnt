@@ -44,6 +44,7 @@ test("puts one hint at the end of the line, not inside the expression", () => {
   const hints = createInlayHintsProvider(
     createHintRuns(),
     () => true,
+    () => 43,
   ).provideInlayHints(documentOf(SOURCE), EVERYTHING);
 
   assert.deepEqual(hints, [
@@ -56,6 +57,7 @@ test("joins every value on a line into one hint", () => {
   const hints = createInlayHintsProvider(
     createHintRuns(),
     () => true,
+    () => 43,
   ).provideInlayHints(documentOf(source), EVERYTHING);
 
   assert.equal(hints.length, 1);
@@ -67,6 +69,7 @@ test("is off unless the file was switched on", () => {
   const hintList = createInlayHintsProvider(
     createHintRuns(),
     () => false,
+    () => 43,
   ).provideInlayHints(documentOf(SOURCE), EVERYTHING);
 
   assert.deepEqual(hintList, []);
@@ -76,6 +79,7 @@ test("switches on per file, not globally", () => {
   const on = new Set(["file:///a.lisp"]);
   const provider = createInlayHintsProvider(createHintRuns(), (document) =>
     on.has(document.uri.toString()),
+    () => 43,
   );
 
   assert.equal(
@@ -89,7 +93,7 @@ test("switches on per file, not globally", () => {
 });
 
 test("only answers for the lines the editor asked about", () => {
-  const provider = createInlayHintsProvider(createHintRuns(), () => true);
+  const provider = createInlayHintsProvider(createHintRuns(), () => true, () => 43);
   const later = provider.provideInlayHints(documentOf(SOURCE), {
     start: { line: 1, character: 0 },
     end: { line: 1, character: 10 },
@@ -101,7 +105,7 @@ test("only answers for the lines the editor asked about", () => {
 test("runs the file once per version, and runs the ;;[trace] calls", () => {
   const runs = createHintRuns();
   const document = documentOf("(defun d (x) (* x 2))\n;;[trace] (d 4)");
-  const provider = createInlayHintsProvider(runs, () => true);
+  const provider = createInlayHintsProvider(runs, () => true, () => 43);
 
   const first = provider.provideInlayHints(document, EVERYTHING);
   provider.provideInlayHints(document, EVERYTHING);
@@ -136,4 +140,33 @@ test("hovering a name with no value says nothing", () => {
     hover.provideHover(documentOf("(defun g (y) y)"), { line: 0, character: 12 }),
     undefined,
   );
+});
+
+test("tooltips the full values when the editor would truncate the line", () => {
+  const source = "(defun f (a b) (list a b))\n(f 1 2)";
+  const hints = createInlayHintsProvider(
+    createHintRuns(),
+    () => true,
+    () => 8,
+  ).provideInlayHints(documentOf(source), EVERYTHING);
+
+  assert.equal(hints.length, 1);
+  assert.deepEqual(hints[0]?.tooltip, ["A = 1", "B = 2"]);
+});
+
+test("has no tooltip when the hint fits, or when the cap is off", () => {
+  const source = "(defun f (a b) (list a b))\n(f 1 2)";
+  const wide = createInlayHintsProvider(
+    createHintRuns(),
+    () => true,
+    () => 100,
+  ).provideInlayHints(documentOf(source), EVERYTHING);
+  assert.equal(wide[0]?.tooltip, undefined);
+
+  const uncapped = createInlayHintsProvider(
+    createHintRuns(),
+    () => true,
+    () => 0,
+  ).provideInlayHints(documentOf(source), EVERYTHING);
+  assert.equal(uncapped[0]?.tooltip, undefined);
 });

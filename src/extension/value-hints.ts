@@ -48,6 +48,7 @@ export function createHintRuns(): HintRuns {
 export function createInlayHintsProvider(
   hintRuns: HintRuns,
   isEnabled: (document: VsTextDocument) => boolean,
+  maxLength: () => number,
 ): VsInlayHintsProvider {
   return {
     provideInlayHints(document, range) {
@@ -56,6 +57,9 @@ export function createInlayHintsProvider(
       const { text, run } = hintRuns.runFor(document);
       const lines = text.split(/\r?\n/);
       const hints: VsInlayHint[] = [];
+      // The editor caps a line's total hint text at this many characters and
+      // truncates with an ellipsis; 0 means no cap.
+      const budget = maxLength();
 
       // One hint per line at the line's end, values joined: inside an expression
       // the same information stops the code being readable.
@@ -63,10 +67,16 @@ export function createInlayHintsProvider(
         const lineHints = run.hintsForLine(line + 1);
         if (lineHints.length === 0) continue;
 
+        const label = lineHints.map(formatHint).join(", ");
+        const truncated = budget !== 0 && label.length > budget;
+
         hints.push({
           position: { line, character: (lines[line] ?? "").length },
-          label: lineHints.map(formatHint).join(", "),
+          label,
           paddingLeft: true,
+          // Hovering the truncated hint shows everything the editor could not,
+          // including bindings it dropped from the line entirely.
+          ...(truncated ? { tooltip: lineHints.map(formatHint) } : {}),
         });
       }
 
