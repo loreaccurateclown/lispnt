@@ -5,3 +5,7 @@ dist/
 *.tsbuildinfo
 *.fasl
 *.tmp
+
+# The scratch workspace used to run the extension against the corpus. Kept on
+# disk so it survives a wiped editor workspace, but it is not project material.
+extension-test.code-workspace
