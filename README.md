@@ -29,9 +29,13 @@ What it finds today:
   closes says how much is missing and where the first closer belongs — "3 lists
   are still open, so the file ends 3 `)` short. Add `)))` after the last line;
   the outermost opened on line 1" — and it underlines `(+` rather than a single
-  character. A missing closer swallows the rest of the file, so names defined
-  after it would look undefined; those warnings are dropped when the file's own
-  recovered text defines the name, while warnings the file really has stay.
+  character. When one closer was deleted and it made a form swallow the form
+  below it, the mark moves to that form and says which line is off: "Bracket
+  mismatch at line 10: COUNT-ZEROS was given 3 arguments; it takes 1 to 2. Check
+  the COUNT-ZEROS form for a missing closing bracket." A missing closer also
+  swallows the rest of the file, so names defined after it would look undefined;
+  those warnings are dropped when the file's own recovered text defines the
+  name, while warnings the file really has stay.
 - **Malformed shapes.** `defun`, `lambda`, `let`/`let*` and `flet`/`labels`
   forms whose parts are missing or in the wrong place, each saying where the
   missing piece belongs.

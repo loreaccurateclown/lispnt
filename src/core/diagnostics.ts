@@ -36,7 +36,10 @@ export type DiagnosticCode =
   | ShapeCode
   | EvalErrorCode
   | NameCode
-  | TraceCode;
+  | TraceCode
+  // Synthesized by analyze: the reader could not close a form, but supplying the
+  // missing closer and re-reading showed which form swallowed its sibling.
+  | "bracket-mismatch";
 
 export interface Diagnostic {
   //ideally this naming won't collide with vscode.Diagnostic
@@ -50,6 +53,13 @@ export interface Diagnostic {
   // The name a name check is about. Analysis uses it to tell a mistake the file
   // really has from one the missing brackets hid.
   readonly name?: string;
+  // What an arity check counted, so a bracket mismatch can restate it in the
+  // learner's terms without parsing its own message back.
+  readonly arityInfo?: {
+    readonly given: number;
+    readonly min: number;
+    readonly max: number | null;
+  };
 }
 
 export function diagnosticFromError(

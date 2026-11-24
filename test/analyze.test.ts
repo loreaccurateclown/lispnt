@@ -91,6 +91,84 @@ test("keeps an arity mistake for a function the file defines", () => {
   );
 });
 
+// The bracket-mismatch fixtures: one closer deleted, so the recovered read is
+// what says which form swallowed its sibling. The mark and the message both move
+// there, and the message names the line and the form.
+function bracketFixture(name: string): string {
+  return readFileSync(
+    join(process.cwd(), "lisp_test_files", "bracket_mismatch", name),
+    "utf8",
+  );
+}
+
+test("marks the call a missing closer made swallow its sibling", () => {
+  const [diagnostic] = analyze(bracketFixture("bracket_mismatch_arity.lisp"));
+
+  assert.equal(diagnostic?.code, "bracket-mismatch");
+  assert.equal(
+    diagnostic?.message,
+    "Bracket mismatch at line 10: COUNT-ZEROS was given 3 arguments; it takes 1 to 2. Check the COUNT-ZEROS form for a missing closing bracket.",
+  );
+  assert.deepEqual(diagnostic?.position, { line: 10, column: 11, offset: 492 });
+  assert.deepEqual(diagnostic?.end, { line: 11, column: 39, offset: 564 });
+});
+
+test("marks an IF given a form too many by a missing closer", () => {
+  const [diagnostic] = analyze(
+    bracketFixture("bracket_mismatch_if_operands.lisp"),
+  );
+
+  assert.equal(diagnostic?.code, "bracket-mismatch");
+  assert.equal(
+    diagnostic?.message,
+    "Bracket mismatch at line 6: IF was given 4 forms; it takes 2 or 3: a test-form, a then-form and an optional else-form. Check the IF form for a missing closing bracket.",
+  );
+  assert.deepEqual(diagnostic?.position, { line: 6, column: 3, offset: 322 });
+  assert.deepEqual(diagnostic?.end, { line: 9, column: 13, offset: 365 });
+});
+
+test("marks a SETQ whose pairs came out odd from a missing closer", () => {
+  const [diagnostic] = analyze(
+    bracketFixture("bracket_mismatch_setq_operands.lisp"),
+  );
+
+  assert.equal(diagnostic?.code, "bracket-mismatch");
+  assert.equal(
+    diagnostic?.message,
+    "Bracket mismatch at line 6: SETQ was given 3 forms; it takes pairs: a variable that is set and a form representing the value to be set. Check the SETQ form for a missing closing bracket.",
+  );
+  assert.deepEqual(diagnostic?.position, { line: 6, column: 3, offset: 332 });
+  assert.deepEqual(diagnostic?.end, { line: 7, column: 14, offset: 356 });
+});
+
+test("marks a LABELS entry a missing closer turned into a definition", () => {
+  const [diagnostic] = analyze(
+    bracketFixture("bracket_mismatch_labels_entry.lisp"),
+  );
+
+  assert.equal(diagnostic?.code, "bracket-mismatch");
+  assert.equal(
+    diagnostic?.message,
+    "Bracket mismatch at line 7: a LABELS entry has no argument list; each local function needs a name and an argument list. Check the LABELS form for a missing closing bracket.",
+  );
+  assert.deepEqual(diagnostic?.position, { line: 7, column: 5, offset: 366 });
+  assert.deepEqual(diagnostic?.end, { line: 7, column: 15, offset: 376 });
+});
+
+test("keeps the unclosed form as the mark when the recovered read is clean", () => {
+  const [diagnostic] = analyze(
+    bracketFixture("bracket_mismatch_last_closer.lisp"),
+  );
+
+  assert.equal(diagnostic?.code, "unterminated-list");
+  assert.equal(
+    diagnostic?.message,
+    "This form never closes, so the file ends 1 `)` short. Add `)` after the last line.",
+  );
+  assert.deepEqual(diagnostic?.position, { line: 3, column: 1, offset: 148 });
+  assert.deepEqual(diagnostic?.end, { line: 3, column: 7, offset: 154 });
+});
+
 // The repair, not the verdict: the learner wrote (x 0) where ((x 0)) was meant,
 // and the whole form is marked because the brackets are what is wrong.
 test("says how to repair a binding list written without its inner brackets", () => {

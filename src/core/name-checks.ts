@@ -163,6 +163,7 @@ function pushArity(
     message: arityMessage(name, given, arity),
     position,
     name,
+    arityInfo: { given, min: arity.min, max: arity.max },
   });
 }
 
