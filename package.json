@@ -24,12 +24,12 @@
       },
       {
         "command": "lispnt.pinTrace",
-        "title": "Lispnt: Pin the Traced File",
+        "title": "Lispnt: Pin the Traced File (Widget Only)",
         "icon": "$(pin)"
       },
       {
         "command": "lispnt.unpinTrace",
-        "title": "Lispnt: Unpin the Traced File",
+        "title": "Lispnt: Unpin the Traced File (Widget Only)",
         "icon": "$(pinned)"
       }
     ],
