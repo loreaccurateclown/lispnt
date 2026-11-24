@@ -2,16 +2,30 @@
 // files?" with numbers instead of an impression. Run it with `npm run bench`.
 //
 // The corpus walk is the same one the roadmap's counts use: the files under
-// lisp_test_files/ plus G:\My Drive\Labs\CPS305, with backup/ skipped and only
-// *.lisp/*.lsp read. Nothing here is packaged.
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+// lisp_test_files/ plus, if LISP_CORPUS names a folder, that folder too, with
+// backup/ skipped and only *.lisp/*.lsp read. Set LISP_CORPUS to your own lab
+// files to measure against code you care about; nothing here is packaged.
+//
+//   PowerShell:  $env:LISP_CORPUS = "C:\path\to\your\lisp"; npm run bench
+//   bash:        LISP_CORPUS=/path/to/your/lisp npm run bench
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { analyze } from "../dist/src/core/analyze.js";
 import { createReader } from "../dist/src/core/reader.js";
 import { collectHints } from "../dist/src/core/hints.js";
 import { traceCases, traceExpressions } from "../dist/src/core/trace-cases.js";
 
-const ROOTS = ["lisp_test_files", "G:/My Drive/Labs/CPS305"];
+const extraCorpus = process.env.LISP_CORPUS;
+if (extraCorpus !== undefined && !existsSync(extraCorpus)) {
+  console.log(`LISP_CORPUS is set but not found: ${extraCorpus} — measuring lisp_test_files only.`);
+}
+const ROOTS = [
+  ...new Set(
+    ["lisp_test_files", ...(extraCorpus !== undefined && existsSync(extraCorpus) ? [extraCorpus] : [])].map(
+      (root) => resolve(root),
+    ),
+  ),
+];
 const RUNS = 5;
 
 function walk(directory, into) {

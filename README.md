@@ -94,18 +94,21 @@ npm install
 npm run build      # tsc
 npm run check      # typecheck only
 npm test           # builds, then runs each suite in turn
-npm run bench      # timings over the corpus and a synthetic size ladder
+npm run bench      # timings over the fixtures, LISP_CORPUS if set, and a size ladder
 ```
 
 `npm test` runs fourteen suites — 819 tests — in a couple of seconds. F5 from
 this folder starts an Extension Development Host with Lispnt loaded
 (`.vscode/launch.json`).
 
-Measured on a 63-file corpus (87.3 KB): parsing takes 1.9 ms, analysis 8.8 ms,
+Measured with a local CPS305 folder set through `LISP_CORPUS` (63 files, 87.3 KB):
+parsing takes 1.9 ms, analysis 8.8 ms,
 value hints 11.4 ms and tracing 0.6 ms in total. The largest file, 19.6 KB,
 analyses in 1.9 ms. Hint runs are the part that does not scale linearly — 1.2 ms
 at 5.8 KB, 12.8 ms at 30 KB, 140 ms at 123 KB — because each finished form copies
-the binding map, so the extension caches one run per document version.
+the binding map, so the extension caches one run per document version. Point
+`npm run bench` at your own files with `LISP_CORPUS` (`$env:LISP_CORPUS = "C:\labs"`
+in PowerShell, `LISP_CORPUS=/path/to/labs` in bash).
 
 ## Layout
 

@@ -35,7 +35,7 @@ Tests: **819** across fourteen suites — 73 reader, 101 analyze, 317 interprete
 trace, 24 trace-cases, 9 trace-tree, 10 value-hints, 39 extension.
 
 Corpus (the manual check, no committed script): **63 files**, 26 under
-`lisp_test_files/` and 37 under `G:\My Drive\Labs\CPS305` (skip `backup/`),
+`lisp_test_files/` and 37 from a local CPS305 corpus (skip `backup/`),
 89 KB. `analyze` reports **31 diagnostics**: 10 on learner code, 2 deliberate on
 `bracket_imbalance.lisp`, and 19 deliberate on the bracket-mismatch fixtures.
 8 files produce a trace frame and 13 produce a value hint once the `;;[trace]`
@@ -48,8 +48,8 @@ markers run.
 - `npm run build`; `npm run check`; `npm test` (builds, then runs each suite file
   explicitly — `node --test <dir>` fails in this sandbox because it spawns
   children). **Add every new suite to the `test` script.**
-- `npm run bench` times parse/analyze/hint/trace over the corpus and a synthetic
-  ladder; it is not part of `npm test`.
+- `npm run bench` times parse/analyze/hint/trace over the fixtures, the folder in
+  `LISP_CORPUS` when set, and a synthetic ladder; it is not part of `npm test`.
 - `tsconfig`: `nodenext`, `strict`, `noUncheckedIndexedAccess`,
   `exactOptionalPropertyTypes` (omit optional properties, never assign
   `undefined`), `noImplicitOverride`.
@@ -60,7 +60,8 @@ markers run.
   floor.
 - `extension-test.code-workspace` is the user's scratch workspace for running the
   extension against the corpus; it is gitignored and worth keeping on disk.
-- `userdocs/` is the user's own notes on Lisp — leave it alone.
+- `userdocs/` is the user's own notes on Lisp; it is gitignored and no longer
+  tracked, but leave it alone.
 - Sandbox traps met here: `vsce` spawns npm and fails under the sandbox, so
   package with `--no-dependencies`; install it with
   `npm i --no-save --no-package-lock --ignore-scripts @vscode/vsce` (its

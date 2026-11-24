@@ -3,12 +3,24 @@ dist/
 .npm-cache/
 .dsh-code-index/
 *.tsbuildinfo
+
+# SBCL output and general scratch
 *.fasl
 *.tmp
+*.log
+.DS_Store
+Thumbs.db
+*.orig
+*.rej
+*.bak
+coverage/
 
 # The packaged extension is built from dist/src and never committed.
 *.vsix
 
-# The scratch workspace used to run the extension against the corpus. Kept on
-# disk so it survives a wiped editor workspace, but it is not project material.
-extension-test.code-workspace
+# Workspace files are the user's own. One is used to run the extension against
+# the corpus, so it stays on disk, but it is not project material.
+*.code-workspace
+
+# The user's own notes on Lisp; not part of the project.
+userdocs/
