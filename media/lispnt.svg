@@ -1,3 +1,4 @@
+<!-- The lambda glyph outline traced from Cascadia Code (SIL Open Font License 1.1). -->
 <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-  <path fill="none" stroke="#C5C5C5" stroke-width="2" stroke-linecap="round" d="M6 4 L17 20 M17 4 L12.5 12.5"/>
+  <path fill="#C5C5C5" d="M1068 -20Q938 -20 858.0 38.5Q778 97 734 251L479 1140Q452 1235 411.5 1272.5Q371 1310 313 1310Q286 1310 251 1302L227 1488Q278 1500 333 1500Q461 1500 539.0 1444.0Q617 1388 659 1240L917 340Q944 245 985.5 207.5Q1027 170 1088 170Q1115 170 1150 178L1174 -8Q1123 -20 1068 -20ZM67 0 526 1108 662 877 527 836Q543 770 541.5 709.0Q540 648 518 591L294 0Z" transform="translate(3.836 21.737) scale(0.013158 -0.013158)"/>
 </svg>
