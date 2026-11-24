@@ -414,6 +414,7 @@ test("the diagnostic showcase still demonstrates what it claims", () => {
       "arity",
     ],
     "names.lisp": ["unbound-variable", "undefined-function", "variable-as-function"],
+    "trace-marker-empty.lisp": ["trace-marker"],
     "quiet.lisp": [],
   };
 
@@ -422,4 +423,29 @@ test("the diagnostic showcase still demonstrates what it claims", () => {
     const found = analyze(source).map((diagnostic) => diagnostic.code);
     assert.deepEqual(found.sort(), [...codes].sort(), file);
   }
+});
+
+test("warns about a trace marker that names no call", () => {
+  const diagnostics = analyze(";;[trace]\n(defun f () 1)\n");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "trace-marker");
+  assert.equal(diagnostics[0]?.severity, "warning");
+  assert.deepEqual(diagnostics[0]?.position, { line: 1, column: 1, offset: 0 });
+  assert.match(diagnostics[0]?.message ?? "", /no call to follow/);
+});
+
+test("does not warn about a trace marker that names a call", () => {
+  assert.deepEqual(analyze(";;[trace] (+ 1 2)"), []);
+});
+
+// The warning is emitted after evaluation so that a marker sitting inside a
+// definition cannot make the analyzer skip that definition.
+test("a marker inside a definition does not hide that definition's mistakes", () => {
+  const source = ["(defun f ()", "  ;;[trace]", "  (car 1))", "(f)"].join("\n");
+
+  assert.deepEqual(
+    analyze(source).map((diagnostic) => diagnostic.code),
+    ["type-error", "trace-marker"],
+  );
 });

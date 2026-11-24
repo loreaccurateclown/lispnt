@@ -20,6 +20,41 @@ export interface TraceCase {
 // ;;[trace:all] (fact 4)    — same, showing every recorded call.
 const MARKER = /^\s*;+\s*\[\s*trace\s*(?::\s*([A-Za-z0-9]+))?\s*\]\s*(.*)$/i;
 
+export interface EmptyTraceMarker {
+  readonly line: number;
+  readonly column: number;
+  readonly offset: number;
+}
+
+// A marker with nothing after it is the common first mistake: the syntax reads
+// like a switch, but it names the call to follow. The analyzer turns these into
+// warnings so the editor can underline and explain them.
+export function emptyTraceMarkers(source: string): EmptyTraceMarker[] {
+  const found: EmptyTraceMarker[] = [];
+  const lines = source.split(/\r?\n/);
+
+  // Exact line starts, so the offsets are right for CRLF files too.
+  const lineStarts: number[] = [0];
+  for (let at = 0; at < source.length; at += 1) {
+    if (source[at] === "\n") lineStarts.push(at + 1);
+  }
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const match = MARKER.exec(line);
+    if (match === null || (match[2] ?? "").trim() !== "") continue;
+
+    const lead = /^[ \t]*/.exec(line)?.[0].length ?? 0;
+    found.push({
+      line: index + 1,
+      column: lead + 1,
+      offset: (lineStarts[index] ?? 0) + lead,
+    });
+  }
+
+  return found;
+}
+
 export function traceCases(source: string): TraceCase[] {
   const cases: TraceCase[] = [];
   let fileForms: AstNode[] | null = null;

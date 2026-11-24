@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { traceCases, type TraceCase } from "../src/core/trace-cases";
+import { emptyTraceMarkers, traceCases, type TraceCase } from "../src/core/trace-cases";
 import { renderTrace } from "../src/core/trace";
 
 //LLM-written tests
@@ -186,4 +186,35 @@ test("renders a case at the limit the marker asked for", () => {
       "5 calls · max depth: 1 · final value: 4",
     ].join("\n"),
   );
+});
+
+test("locates a marker that names no call", () => {
+  const source = "(defun f () 1)\n  ;; [trace]\n";
+  const found = emptyTraceMarkers(source);
+
+  assert.deepEqual(found, [
+    { line: 2, column: 3, offset: source.indexOf(";;") },
+  ]);
+});
+
+test("does not flag a marker with a call, and finds one on each line", () => {
+  assert.deepEqual(emptyTraceMarkers(";;[trace] (fact 4)"), []);
+  assert.deepEqual(emptyTraceMarkers(";;[trace:3] (fact 4)"), []);
+
+  const found = emptyTraceMarkers(";;[trace]\n(list 1)\n  ;;[trace:all]");
+  assert.deepEqual(
+    found.map((marker) => [marker.line, marker.column]),
+    [
+      [1, 1],
+      [3, 3],
+    ],
+  );
+});
+
+test("locates markers in a CRLF file as well", () => {
+  const source = "(list 1)\r\n  ;; [trace]\r\n";
+  const found = emptyTraceMarkers(source);
+
+  assert.equal(found.length, 1);
+  assert.deepEqual(found[0], { line: 2, column: 3, offset: source.indexOf(";;") });
 });

@@ -21,11 +21,16 @@ export type ShapeCode =
 // because the evaluator can find the same mistakes in code that actually runs.
 export type NameCode = "variable-as-function";
 
+// A Lispnt convention rather than a Lisp one: the ;;[trace] marker names the call
+// to follow, and written without one it does nothing.
+export type TraceCode = "trace-marker";
+
 export type DiagnosticCode =
   | ReaderErrorCode
   | ShapeCode
   | EvalErrorCode
-  | NameCode;
+  | NameCode
+  | TraceCode;
 
 export interface Diagnostic {
   //ideally this naming won't collide with vscode.Diagnostic

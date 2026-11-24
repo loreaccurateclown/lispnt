@@ -14,6 +14,7 @@ import {
 } from "./interpreter";
 import { checkNames } from "./name-checks";
 import { type AstNode, createReader } from "./reader";
+import { emptyTraceMarkers } from "./trace-cases";
 
 // Mistakes the name checker reports for the whole file. Evaluation finds the
 // same ones in code it reaches, so its copies are dropped rather than shown
@@ -110,6 +111,19 @@ export function analyze(source: string): Diagnostic[] {
   // Whole-file name checks: they see every body, including the ones evaluation
   // never reaches.
   diagnostics.push(...checkNames(forms));
+
+  // Last, after evaluation: a marker warning can sit inside a definition, and
+  // isCoveredByDiagnostic would skip evaluating that form if the warning came
+  // earlier — hiding real mistakes in the body it sits in.
+  for (const marker of emptyTraceMarkers(source)) {
+    diagnostics.push({
+      code: "trace-marker",
+      severity: "warning",
+      message:
+        "This ;;[trace] marker has no call to follow. Write the call you want traced on the same line, for example ;;[trace] (fact 4).",
+      position: { line: marker.line, column: marker.column, offset: marker.offset },
+    });
+  }
 
   return diagnostics;
 }

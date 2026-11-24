@@ -10,6 +10,10 @@ panel. Each file's header comment says what to expect.
   is Lispnt's gap, and blaming the learner for it would be a lie. `quiet.lisp`
   is the file that demonstrates that.
 
+`trace-marker-empty.lisp` is a Lispnt convention rather than a Lisp one: a
+`;;[trace]` with no call after it does nothing, so it gets a warning telling you
+to put the call on the same line.
+
 One reader mistake used to throw before it could be reported: an unclosed `#|`
 block comment escaped the reader as a crash, so the extension logged it to its
 output channel and the learner saw a clean file. That is fixed, and
