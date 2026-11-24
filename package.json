@@ -53,7 +53,13 @@
           "name": "Trace"
         }
       ]
-    }
+    },
+    "viewsWelcome": [
+      {
+        "view": "lispnt.trace",
+        "contents": "Open a Lisp file to see the calls its ;;[trace] markers name.\n[Show Trace](command:lispnt.showTrace)"
+      }
+    ]
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -77,11 +77,13 @@ export interface VsTreeProvider<Item> {
   getTreeItem(item: Item): VsTreeItem;
 }
 
-// A tree the editor renders from our model. refresh() re-asks the provider, and
-// setMessage is the muted summary line under the view.
+// A tree the editor renders from our model. refresh() re-asks the provider,
+// setMessage is the muted summary line under the view, and visibility lets the
+// extension refresh when the user opens the view.
 export interface VsTreeView extends VsDisposable {
   refresh(): void;
   setMessage(text: string): void;
+  onDidChangeVisibility(listener: (visible: boolean) => void): VsDisposable;
 }
 
 export interface VsCodeApi {
@@ -95,6 +97,11 @@ export interface VsCodeApi {
   ): VsDisposable;
   onDidSaveTextDocument(listener: (document: VsTextDocument) => void): VsDisposable;
   onDidCloseTextDocument(listener: (document: VsTextDocument) => void): VsDisposable;
+  // Fires with undefined when the last editor closes. The tree uses it because
+  // activation can run before the editor is restored.
+  onDidChangeActiveTextEditor(
+    listener: (document: VsTextDocument | undefined) => void,
+  ): VsDisposable;
   getConfiguration(section: string): VsConfiguration;
   registerTextDocumentContentProvider(
     scheme: string,

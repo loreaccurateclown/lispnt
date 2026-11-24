@@ -64,6 +64,8 @@ interface Fake {
   save(document: VsTextDocument): void;
   close(document: VsTextDocument): void;
   setActive(document: VsTextDocument | undefined): void;
+  activeEditorChanged(): void;
+  setTreeVisible(visible: boolean): void;
 }
 
 function fakeApi(options: FakeOptions = {}): Fake {
@@ -83,6 +85,8 @@ function fakeApi(options: FakeOptions = {}): Fake {
   const changeListeners: Array<(event: { document: VsTextDocument }) => void> = [];
   const saveListeners: Array<(document: VsTextDocument) => void> = [];
   const closeListeners: Array<(document: VsTextDocument) => void> = [];
+  const activeEditorListeners: Array<(document: VsTextDocument | undefined) => void> = [];
+  const visibilityListeners: Array<(visible: boolean) => void> = [];
 
   const collection: VsDiagnosticCollection = {
     set: (uri, diagnostics) => sets.push({ uri, diagnostics }),
@@ -119,6 +123,10 @@ function fakeApi(options: FakeOptions = {}): Fake {
         setMessage: (text) => {
           tree.message = text;
         },
+        onDidChangeVisibility: (listener) => {
+          visibilityListeners.push(listener);
+          return { dispose: () => undefined };
+        },
         dispose: () => undefined,
       };
     },
@@ -140,6 +148,10 @@ function fakeApi(options: FakeOptions = {}): Fake {
     },
     onDidCloseTextDocument: (listener) => {
       closeListeners.push(listener);
+      return { dispose: () => undefined };
+    },
+    onDidChangeActiveTextEditor: (listener) => {
+      activeEditorListeners.push(listener);
       return { dispose: () => undefined };
     },
     getConfiguration: () => ({
@@ -195,6 +207,12 @@ function fakeApi(options: FakeOptions = {}): Fake {
     setActive: (document) => {
       active = document;
     },
+    activeEditorChanged: () => {
+      for (const listener of activeEditorListeners) listener(active);
+    },
+    setTreeVisible: (visible) => {
+      for (const listener of visibilityListeners) listener(visible);
+    },
   };
 }
 
@@ -213,7 +231,7 @@ test("registers a collection, a channel, the listeners, a trace provider and two
   assert.deepEqual(fake.channels, ["Lispnt"]);
   assert.deepEqual([...fake.commands.keys()], ["lispnt.checkFile", "lispnt.showTrace"]);
   assert.deepEqual([...fake.providers.keys()], ["lispnt-trace"]);
-  assert.equal(fake.context.subscriptions.length, 11);
+  assert.equal(fake.context.subscriptions.length, 13);
 });
 
 test("reports a mistake in an opened Lisp file", () => {
@@ -527,4 +545,57 @@ test("the trace command refreshes the tree as well as the panel", async () => {
   await fake.commands.get("lispnt.showTrace")?.();
 
   assert.equal(fake.trees[0]?.refreshes, before + 1);
+});
+
+// Activation can run before the editor is restored, which is why the tree had
+// nothing in it until the command was run by hand.
+test("the tree follows the active editor, so opening a file fills it", () => {
+  const fake = fakeApi();
+  activate(fake);
+
+  assert.deepEqual(fake.trees[0]?.provider.getChildren(), []);
+  assert.match(fake.trees[0]?.message ?? "", /Open a Lisp file/);
+
+  fake.setActive(documentOf("a.lisp", `${FACT}\n;;[trace] (fact 3)`));
+  fake.activeEditorChanged();
+
+  const roots = fake.trees[0]?.provider.getChildren() as readonly TraceNode[];
+  assert.equal(roots.length, 1);
+  assert.equal(roots[0]?.label, "(fact 3)");
+});
+
+test("saving the file the tree shows re-traces it", () => {
+  const active = documentOf("a.lisp", `${FACT}\n;;[trace] (fact 3)`);
+  const fake = fakeApi({ active });
+  activate(fake);
+
+  const before = fake.trees[0]?.refreshes ?? 0;
+  fake.save(active);
+
+  assert.equal(fake.trees[0]?.refreshes, before + 1);
+});
+
+test("opening the view refreshes it, hiding it does not", () => {
+  const active = documentOf("a.lisp", `${FACT}\n;;[trace] (fact 3)`);
+  const fake = fakeApi({ active });
+  activate(fake);
+
+  const before = fake.trees[0]?.refreshes ?? 0;
+  fake.setTreeVisible(false);
+  assert.equal(fake.trees[0]?.refreshes, before);
+
+  fake.setTreeVisible(true);
+  assert.equal(fake.trees[0]?.refreshes, before + 1);
+});
+
+test("typing does not re-trace, so the tree does not run the file per keystroke", async () => {
+  const active = documentOf("a.lisp", `${FACT}\n;;[trace] (fact 3)`);
+  const fake = fakeApi({ active });
+  activate(fake);
+
+  const before = fake.trees[0]?.refreshes ?? 0;
+  fake.change(active);
+  await wait(25);
+
+  assert.equal(fake.trees[0]?.refreshes, before);
 });

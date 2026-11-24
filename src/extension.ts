@@ -52,6 +52,10 @@ function createTreeView<Item>(id: string, provider: VsTreeProvider<Item>): VsTre
     setMessage: (text) => {
       view.message = text;
     },
+    onDidChangeVisibility: (listener) => {
+      const registration = view.onDidChangeVisibility((event) => listener(event.visible));
+      return { dispose: () => registration.dispose() };
+    },
     dispose: () => {
       view.dispose();
       changed.dispose();
@@ -104,6 +108,10 @@ function adapter(): VsCodeApi {
       vscode.workspace.onDidSaveTextDocument((document) => listener(document)),
     onDidCloseTextDocument: (listener) =>
       vscode.workspace.onDidCloseTextDocument((document) => listener(document)),
+    onDidChangeActiveTextEditor: (listener) =>
+      vscode.window.onDidChangeActiveTextEditor((editor) =>
+        listener(editor?.document),
+      ),
     getConfiguration: (section) => ({
       get: (key) => vscode.workspace.getConfiguration(section).get(key),
     }),

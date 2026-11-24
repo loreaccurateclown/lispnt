@@ -158,15 +158,29 @@ export function activateExtension(
     }
   };
 
+  // Saving re-checks the file and, when it is the one the tree shows, re-traces
+  // it too. Typing does not: a trace runs the file, which is fine once per save
+  // and too much per keystroke.
+  const onSave = (document: VsTextDocument): void => {
+    refresh(document);
+    if (document === api.activeTextDocument) refreshTraceTree();
+  };
+
   context.subscriptions.push(
     traceTreeView,
     traceProvider,
     api.onDidOpenTextDocument(refresh),
-    api.onDidSaveTextDocument(refresh),
+    api.onDidSaveTextDocument(onSave),
     api.onDidChangeTextDocument((event) => schedule(event.document)),
     api.onDidCloseTextDocument((document) => {
       cancel(document.uri.toString());
       collection.delete(document.uri);
+    }),
+    // Activation can run before the editor is restored, so the tree also
+    // follows the active editor: that is what makes it populate on open.
+    api.onDidChangeActiveTextEditor(() => refreshTraceTree()),
+    traceTreeView.onDidChangeVisibility((visible) => {
+      if (visible) refreshTraceTree();
     }),
     api.registerCommand("lispnt.checkFile", () => {
       const document = api.activeTextDocument;
