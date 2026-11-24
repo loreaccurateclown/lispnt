@@ -247,8 +247,8 @@ test("prints a character", () => {
   assert.equal(printValue({ kind: "char", value: "A" }), "#\\A");
 });
 
-test("prints a named character by name", () => {
-  assert.equal(printValue({ kind: "char", value: " " }), "#\\Space");
+test("prints a named character the way SBCL does", () => {
+  assert.equal(printValue({ kind: "char", value: " " }), "#\\ ");
   assert.equal(printValue({ kind: "char", value: "\n" }), "#\\Newline");
   assert.equal(printValue({ kind: "char", value: "\t" }), "#\\Tab");
 });
@@ -256,7 +256,7 @@ test("prints a named character by name", () => {
 test("prints a character inside a list and a vector", () => {
   assert.equal(
     printValue(list({ kind: "char", value: "a" }, { kind: "char", value: " " })),
-    "(#\\a #\\Space)",
+    "(#\\a #\\ )",
   );
 });
 

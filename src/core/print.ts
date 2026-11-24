@@ -65,10 +65,11 @@ function quoteString(text: string): string {
   return '"' + text.replaceAll("\\", "\\\\").replaceAll('"', '\\"') + '"';
 }
 
-// SBCL prints a space as #\ followed by an invisible space; the name is
-// easier to read and reads back identically, so it is printed by name here.
+// Exactly what SBCL prints: a space is #\ followed by the space itself, newline
+// and tab keep their names, and any other character stands for itself. The
+// reader already accepts #\ followed by a space, so this round-trips.
 function renderChar(char: string): string {
-  if (char === " ") return "#\\Space";
+  if (char === " ") return "#\\ ";
   if (char === "\n") return "#\\Newline";
   if (char === "\t") return "#\\Tab";
   return `#\\${char}`;

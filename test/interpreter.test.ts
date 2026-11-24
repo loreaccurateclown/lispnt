@@ -2129,6 +2129,10 @@ test("writes princ and prin1 forms and their to-string variants", () => {
   assert.equal(printValueOf('(prin1-to-string "s")'), '"\\"s\\""');
   assert.equal(printValueOf("(princ-to-string #\\a)"), '"a"');
   assert.equal(printValueOf("(prin1-to-string #\\a)"), '"#\\\\a"');
+  // SBCL prints a space as #\ followed by the space itself, and princ leaves it
+  // bare. Both read back as the character they came from.
+  assert.equal(printValueOf("(prin1-to-string #\\Space)"), '"#\\\\ "');
+  assert.equal(printValueOf("(princ-to-string #\\Space)"), '" "');
 });
 
 test("returns the written object from princ, prin1 and write", () => {

@@ -947,6 +947,15 @@ test("reads a character name in any case", () => {
   assert.equal(space.kind === "atom" ? space.value : undefined, " ");
 });
 
+test("reads the space character as the printer writes it", () => {
+  // SBCL prints a space as #\ followed by a space, and the reader accepts it,
+  // so what the printer emits reads back as the same character.
+  const space = parse("#\\ ");
+
+  assert.equal(space.kind === "atom" ? space.atomType : undefined, "char");
+  assert.equal(space.kind === "atom" ? space.value : undefined, " ");
+});
+
 test("reads a delimiter as a character", () => {
   const open = parse("#\\(");
   const close = parse("#\\)");
