@@ -35,7 +35,7 @@ export const EXPLAIN_TRACE =
   "This is a summary, not a full trace.\n" +
   "The final value is on the top line: the function recurses down to max depth,\n" +
   "then the values are combined back up.\n" +
-  "If using tail-call recursion, nothing is combined — the answer returns unchanged.";
+  "In tail-call recursion, nothing is combined.";
 
 export const DEFAULT_TRACE_LIMIT = 10;
 

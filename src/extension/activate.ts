@@ -1,5 +1,4 @@
 import { analyze } from "../core/analyze";
-import { EXPLAIN_TRACE } from "../core/trace";
 import type {
   VsCodeApi,
   VsDiagnosticCollection,
@@ -112,28 +111,8 @@ export function activateExtension(
     return document !== undefined && isLispDocument(document) ? document : undefined;
   };
 
-  // A view has one text slot, the message, and the editor renders it above the
-  // tree — so the summary lives there and the explanation becomes a collapsible
-  // node at the end of the list.
-  const helpNode: TraceNode = {
-    id: "help",
-    label: "What am I looking at?",
-    state: "collapsed",
-    children: EXPLAIN_TRACE.split("\n").map((line, index) => ({
-      id: `help:${index}`,
-      label: line,
-      state: "none",
-      children: [],
-    })),
-  };
-
   const traceTreeView = api.createTreeView<TraceNode>("lispnt.trace", {
-    getChildren: (node) =>
-      node === undefined
-        ? roots.length === 0
-          ? roots
-          : [...roots, helpNode]
-        : node.children,
+    getChildren: (node) => (node === undefined ? roots : node.children),
     getTreeItem: (node) => ({
       label: node.label,
       ...(node.description === undefined ? {} : { description: node.description }),
