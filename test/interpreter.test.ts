@@ -16,6 +16,8 @@ import {
   withObserver,
   withStepCeiling,
 } from "../src/core/interpreter";
+import { builtins } from "../src/core/builtins";
+import { STANDARD_SYMBOLS } from "../src/core/standard-symbols";
 
 //LLM-written tests
 function num(value: number): LispValue {
@@ -1078,6 +1080,50 @@ test("treats a character as an atom", () => {
   assert.deepEqual(evalIn("(typep #\\a 'string)"), NIL);
 });
 
+test("compares characters with and without case", () => {
+  assert.deepEqual(evalIn("(char-equal #\\a #\\A)"), intern("T"));
+  assert.ok(isNil(evalIn("(char-equal #\\a #\\b)")));
+  assert.deepEqual(evalIn("(char-lessp #\\a #\\B)"), intern("T"));
+  assert.deepEqual(evalIn("(char-greaterp #\\b #\\A)"), intern("T"));
+  assert.deepEqual(evalIn("(char< #\\a #\\b)"), intern("T"));
+  assert.deepEqual(evalIn("(char> #\\b #\\a)"), intern("T"));
+  // Uppercase sorts before lowercase, so CHAR< is case-sensitive where the
+  // ...-LESSP family is not.
+  assert.deepEqual(evalIn("(char< #\\A #\\a)"), intern("T"));
+  assert.ok(isNil(evalIn("(char-lessp #\\A #\\a)")));
+});
+
+test("recognises a real and a string", () => {
+  assert.deepEqual(evalIn("(realp 1)"), intern("T"));
+  assert.deepEqual(evalIn("(realp 1.5)"), intern("T"));
+  assert.ok(isNil(evalIn('(realp "x")')));
+  assert.deepEqual(evalIn('(stringp "x")'), intern("T"));
+  assert.ok(isNil(evalIn("(stringp 1)")));
+});
+
+test("counts a proper list and refuses a dotted one", () => {
+  assert.deepEqual(evalIn("(list-length '(1 2 3))"), num(3));
+  assert.deepEqual(evalIn("(list-length '())"), num(0));
+  assert.throws(() => evalIn("(list-length '(1 2 . 3))"), (error: unknown) => {
+    return error instanceof LispEvalError && error.code === "type-error";
+  });
+});
+
+test("answers NIL for a circular list's length", () => {
+  assert.deepEqual(
+    evalIn("(let ((x (list 1 2))) (setf (cdr (cdr x)) x) (list-length x))"),
+    NIL,
+  );
+});
+
+test("answers the hash table's test", () => {
+  assert.deepEqual(evalIn("(hash-table-test (make-hash-table))"), intern("EQL"));
+  assert.deepEqual(
+    evalIn("(hash-table-test (make-hash-table :test #'equal))"),
+    intern("EQUAL"),
+  );
+});
+
 test("adds and subtracts one", () => {
   assert.deepEqual(evalIn("(1+ 41)"), num(42));
   assert.deepEqual(evalIn("(1- 41)"), num(40));
@@ -1301,6 +1347,38 @@ test("signals from ecase and ccase when nothing matches", () => {
 test("lists do and the case family as special forms", () => {
   for (const name of ["DO", "DO*", "CASE", "ECASE", "CCASE"]) {
     assert.ok(SPECIAL_FORMS.has(name), `${name} should be a special form`);
+  }
+});
+
+// A name Lispnt knows but does not implement must stay silent. Calling one used
+// to answer "undefined function" for names the sweep found missing from the
+// list, which blames the learner for our gap; these two tests keep that from
+// creeping back in either direction.
+test("answers every unimplemented standard name with unsupported-standard", () => {
+  for (const name of STANDARD_SYMBOLS) {
+    assert.throws(
+      () => run(`(${name})`),
+      (error: unknown) =>
+        error instanceof LispEvalError && error.code === "unsupported-standard",
+      `${name} should be a silent unsupported-standard gap`,
+    );
+  }
+});
+
+test("keeps implemented names off the silent list", () => {
+  for (const name of builtins.keys()) {
+    assert.equal(
+      STANDARD_SYMBOLS.has(name),
+      false,
+      `${name} is implemented and must not be on the silent list`,
+    );
+  }
+  for (const name of SPECIAL_FORMS) {
+    assert.equal(
+      STANDARD_SYMBOLS.has(name),
+      false,
+      `${name} is a special form and must not be on the silent list`,
+    );
   }
 });
 

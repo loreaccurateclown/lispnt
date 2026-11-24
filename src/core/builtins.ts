@@ -255,6 +255,26 @@ register("LENGTH", 1, 1, (args) => {
     value: size,
   };
 });
+// A proper list has a length; a dotted one is a type error, and CL answers NIL
+// for a circular one rather than looping — the seen set is what keeps a
+// learner's (setf (cdr x) x) from hanging the analysis.
+register("LIST-LENGTH", 1, 1, (args) => {
+  const seen = new Set<object>();
+  let value = args[0]!;
+  let count = 0;
+
+  while (value.kind === "cons") {
+    if (seen.has(value)) return NIL;
+    seen.add(value);
+    value = value.cdr;
+    count += 1;
+  }
+
+  if (!isNil(value))
+    throw new LispEvalError("type-error", null, "LIST-LENGTH needs a proper list");
+
+  return { kind: "number", value: count };
+});
 register("NOT", 1, 1, (args) => (isNil(args[0]!) ? intern("T") : NIL));
 register("EQ", 2, 2, (args) => (isEq(args[0]!, args[1]!) ? intern("T") : NIL));
 register("EQUAL", 2, 2, (args) =>
@@ -496,6 +516,13 @@ register("ATOM", 1, 1, (args) =>
 register("NUMBERP", 1, 1, (args) =>
   args[0]!.kind === "number" ? intern("T") : NIL,
 );
+// Every number Lispnt has is real: there are no complex numbers.
+register("REALP", 1, 1, (args) =>
+  args[0]!.kind === "number" ? intern("T") : NIL,
+);
+register("STRINGP", 1, 1, (args) =>
+  args[0]!.kind === "string" ? intern("T") : NIL,
+);
 register("INTEGERP", 1, 1, (args) => {
   const value = args[0]!;
   return value.kind === "number" && Number.isInteger(value.value)
@@ -596,6 +623,34 @@ register("CHAR=", 2, 2, (args) =>
   expectCharValue(args[0]!) === expectCharValue(args[1]!)
     ? intern("T")
     : NIL,
+);
+
+// CHAR-EQUAL and the ...-LESSP / ...-GREATERP family ignore case; CHAR< and
+// CHAR> do not, as in CL.
+register("CHAR-EQUAL", 2, 2, (args) => {
+  const left = expectCharValue(args[0]!).toLowerCase();
+  const right = expectCharValue(args[1]!).toLowerCase();
+  return left === right ? intern("T") : NIL;
+});
+
+register("CHAR-LESSP", 2, 2, (args) => {
+  const left = expectCharValue(args[0]!).toLowerCase();
+  const right = expectCharValue(args[1]!).toLowerCase();
+  return left < right ? intern("T") : NIL;
+});
+
+register("CHAR-GREATERP", 2, 2, (args) => {
+  const left = expectCharValue(args[0]!).toLowerCase();
+  const right = expectCharValue(args[1]!).toLowerCase();
+  return left > right ? intern("T") : NIL;
+});
+
+register("CHAR<", 2, 2, (args) =>
+  expectCharValue(args[0]!) < expectCharValue(args[1]!) ? intern("T") : NIL,
+);
+
+register("CHAR>", 2, 2, (args) =>
+  expectCharValue(args[0]!) > expectCharValue(args[1]!) ? intern("T") : NIL,
 );
 
 register("CHAR-UPCASE", 1, 1, (args) => {
@@ -804,6 +859,11 @@ register("HASH-TABLE-COUNT", 1, 1, (args) => ({
 
 register("HASH-TABLE-P", 1, 1, (args) =>
   args[0]!.kind === "hash" ? intern("T") : NIL,
+);
+
+// CL answers the test as a function designator; the table stores it by name.
+register("HASH-TABLE-TEST", 1, 1, (args) =>
+  intern(expectHashTable(args[0]!).test.toUpperCase()),
 );
 
 

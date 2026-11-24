@@ -41,7 +41,7 @@ export const STANDARD_SYMBOLS: ReadonlySet<string> = new Set([
   // strings and characters
   "STRING", "STRING-UPCASE", "STRING-DOWNCASE", "STRING-CAPITALIZE",
   "STRING=", "STRING>", "STRING-EQUAL", "STRING-TRIM", "STRING-LEFT-TRIM",
-  "STRING-RIGHT-TRIM", "CHAR<", "CHAR>",
+  "STRING-RIGHT-TRIM",
   "CHAR-DOWNCASE", "CHAR-CODE", "CODE-CHAR", "DIGIT-CHAR", "ALPHA-CHAR-P",
   "UPPER-CASE-P", "LOWER-CASE-P", "PARSE-INTEGER", "CHAR-NAME", "NAME-CHAR",
 
@@ -59,6 +59,22 @@ export const STANDARD_SYMBOLS: ReadonlySet<string> = new Set([
 
   // misc
   "WARN", "ABORT", "ASSERT", "CHECK-TYPE", "SLEEP", "GC", "SAVE-LISP-AND-DIE",
+
+  // Names a sweep found missing: calling one of these was reported as an
+  // undefined function, which blames the learner for Lispnt's gap. The sweep
+  // called every name below with no arguments and took the ones that answered
+  // "undefined function" instead of "unsupported standard".
+  "CHARACTERP", "CHAR-INT", "DIGIT-CHAR-P", "ALPHANUMERICP", "BOTH-CASE-P",
+  "GRAPHIC-CHAR-P", "STANDARD-CHAR-P", "CHAR<=", "CHAR>=", "CHAR-NOT-EQUAL",
+  "CHAR-NOT-LESSP", "CHAR-NOT-GREATERP", "STRING/=", "STRING<=", "STRING>=",
+  "STRING-NOT-EQUAL", "STRING-LESSP", "STRING-GREATERP",
+  "LIST*", "MAKE-LIST", "NCONC", "REVAPPEND", "RASSOC-IF", "UNION", "INTERSECTION",
+  "SET-DIFFERENCE", "SET-EXCLUSIVE-OR", "SUBSETP", "MAP", "MAPCON", "MAP-INTO",
+  "DELETE-IF-NOT", "REMOVE-DUPLICATES", "DELETE-DUPLICATES", "COUNT-IF",
+  "SEARCH", "MISMATCH", "SVREF", "VECTORP", "ARRAY", "ARRAYP", "FILL-POINTER",
+  "GENTEMP", "COPY-SYMBOL", "FMAKUNBOUND", "MAKUNBOUND", "REMPROP", "GET",
+  "SXHASH", "ONEP", "ISQRT", "REM", "RANDOM-STATE", "COMPLEXP", "FUNCTIONP",
+  "COMPILED-FUNCTION-P", "MACROEXPAND", "MACROEXPAND-1", "HASH-TABLE-SIZE",
 ]);
 
 
