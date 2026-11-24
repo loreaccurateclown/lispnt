@@ -703,34 +703,146 @@ const typePredicates = new Map<string, (value: LispValue) => boolean>([
   ["FUNCTION", (value) => value.kind === "function" || value.kind === "builtin"],
 ]);
 
-register("TYPEP", 2, 2, (args) => {
-  const specifier = args[1]!;
-  if (specifier.kind !== "symbol")
-    throw new LispEvalError(
-      "unsupported-standard",
-      null,
-      `TYPEP: Lispnt answers type specifiers written as a symbol, got ${specifier.kind}`,
+register("TYPEP", 2, 2, (args) =>
+  typepMatches(args[0]!, args[1]!) ? intern("T") : NIL,
+);
+
+// A type specifier is a name, a structure name, or a list whose head says how to
+// combine the rest. CL has far more of these than Lispnt models: an unknown head
+// stays unsupported-standard so it is silent rather than answering a confident
+// NIL, which would be our gap reported as the learner's mistake.
+function typepMatches(value: LispValue, specifier: LispValue): boolean {
+  if (specifier.kind === "symbol") {
+    const predicate = typePredicates.get(specifier.name);
+    if (predicate !== undefined) return predicate(value);
+    // A structure type is answered by comparing the instance's type name, so
+    // (typep 5 'tree-node) is NIL once tree-node has been defined.
+    if (structTypeNames.has(specifier.name))
+      return value.kind === "struct" && value.type === specifier.name;
+    throw unsupportedType(
+      `TYPEP: Lispnt does not know the type specifier ${specifier.name}`,
     );
-
-  const predicate = typePredicates.get(specifier.name);
-  if (predicate !== undefined)
-    return predicate(args[0]!) ? intern("T") : NIL;
-
-  // A structure type is answered by comparing the instance's type name, so
-  // (typep 5 'tree-node) is NIL once tree-node has been defined.
-  if (structTypeNames.has(specifier.name)) {
-    const value = args[0]!;
-    return value.kind === "struct" && value.type === specifier.name
-      ? intern("T")
-      : NIL;
   }
 
-  throw new LispEvalError(
-    "unsupported-standard",
-    null,
-    `TYPEP: Lispnt does not know the type specifier ${specifier.name}`,
+  if (specifier.kind !== "cons")
+    throw unsupportedType(
+      "TYPEP: Lispnt answers type specifiers written as a symbol or a list",
+    );
+
+  const parts = consForm(specifier);
+  const head = parts[0];
+  const name = head?.kind === "symbol" ? head.name : undefined;
+  const rest = parts.slice(1);
+
+  switch (name) {
+    case "OR":
+      return rest.some((part) => typepMatches(value, part));
+    case "AND":
+      return rest.every((part) => typepMatches(value, part));
+    case "NOT": {
+      const only = rest[0];
+      if (only === undefined) break;
+      return !typepMatches(value, only);
+    }
+    case "MEMBER":
+      return rest.some((candidate) => isEql(candidate, value));
+    case "EQL": {
+      const only = rest[0];
+      if (only === undefined) break;
+      return isEql(only, value);
+    }
+    case "INTEGER":
+    case "RATIONAL":
+    case "FLOAT":
+      return matchesNumberRange(value, rest, name);
+    case "MOD": {
+      const bound = rest[0];
+      if (bound === undefined || bound.kind !== "number") break;
+      return (
+        value.kind === "number" &&
+        Number.isInteger(value.value) &&
+        value.value >= 0 &&
+        value.value < bound.value
+      );
+    }
+    case "CONS":
+      return matchesCons(value, rest);
+    case "VECTOR":
+      return matchesVector(value, rest);
+    case "ARRAY":
+      return value.kind === "array" && rest.length === 0;
+    default:
+      break;
+  }
+
+  throw unsupportedType(
+    `TYPEP: Lispnt does not model the type specifier (${String(name ?? "?")} …)`,
   );
-});
+}
+
+function unsupportedType(message: string): LispEvalError {
+  return new LispEvalError("unsupported-standard", null, message);
+}
+
+// EQL, which is what MEMBER and EQL specifiers compare with: numbers and
+// characters by value, symbols by name, anything else by identity.
+function isEql(left: LispValue, right: LispValue): boolean {
+  if (left.kind === "number" && right.kind === "number")
+    return left.value === right.value;
+  if (left.kind === "char" && right.kind === "char")
+    return left.value === right.value;
+  if (left.kind === "symbol" && right.kind === "symbol")
+    return left.name === right.name;
+  return isEq(left, right);
+}
+
+// (integer 0 10), (rational * 1), (float 0 *): bounds are inclusive, and * is
+// the unbounded end. Lispnt's numbers are doubles, so INTEGER means an integer
+// value and FLOAT the rest.
+function matchesNumberRange(
+  value: LispValue,
+  bounds: readonly LispValue[],
+  kind: string,
+): boolean {
+  if (value.kind !== "number") return false;
+  if (kind === "INTEGER" && !Number.isInteger(value.value)) return false;
+  if (kind === "FLOAT" && Number.isInteger(value.value)) return false;
+
+  const low = bounds[0];
+  const high = bounds[1];
+  const atLeast =
+    low === undefined ||
+    (low.kind === "symbol" && low.name === "*") ||
+    (low.kind === "number" && value.value >= low.value);
+  const atMost =
+    high === undefined ||
+    (high.kind === "symbol" && high.name === "*") ||
+    (high.kind === "number" && value.value <= high.value);
+  return atLeast && atMost;
+}
+
+function matchesCons(value: LispValue, parts: readonly LispValue[]): boolean {
+  if (value.kind !== "cons") return false;
+  const carSpecifier = parts[0];
+  if (carSpecifier === undefined) return true;
+  if (!typepMatches(value.car, carSpecifier)) return false;
+  const cdrSpecifier = parts[1];
+  if (cdrSpecifier === undefined) return true;
+  return typepMatches(value.cdr, cdrSpecifier);
+}
+
+function matchesVector(value: LispValue, parts: readonly LispValue[]): boolean {
+  if (value.kind !== "array") return false;
+  const element = parts[0];
+  if (element === undefined) return true;
+
+  const length = arrayLength(value);
+  for (let index = 0; index < length; index += 1) {
+    const item = value.elements[index];
+    if (item === undefined || !typepMatches(item, element)) return false;
+  }
+  return true;
+}
 
 // A hash table finds a key again through a canonical string chosen by its
 // :test. Atoms are compared by value; under eq/eql a cons, array or structure

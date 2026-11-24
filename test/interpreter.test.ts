@@ -1225,12 +1225,37 @@ test("answers a plain type specifier", () => {
 });
 
 test("refuses a type specifier it does not model", () => {
-  assert.throws(() => evalIn("(typep 3 '(integer 0 10))"), (error: unknown) => {
+  assert.throws(() => evalIn("(typep 3 '(satisfies evenp))"), (error: unknown) => {
     return error instanceof LispEvalError && error.code === "unsupported-standard";
   });
   assert.throws(() => evalIn("(typep 3 'tree-node)"), (error: unknown) => {
     return error instanceof LispEvalError && error.code === "unsupported-standard";
   });
+});
+
+test("answers a compound type specifier", () => {
+  assert.deepEqual(evalIn("(typep 1 '(or integer string))"), intern("T"));
+  assert.deepEqual(evalIn("(typep \"s\" '(or integer string))"), intern("T"));
+  assert.ok(isNil(evalIn("(typep #\\a '(or integer string))")));
+  assert.deepEqual(evalIn("(typep 5 '(and integer (integer 0 10)))"), intern("T"));
+  assert.ok(isNil(evalIn("(typep 50 '(and integer (integer 0 10)))")));
+  assert.deepEqual(evalIn("(typep 5 '(not string))"), intern("T"));
+  assert.deepEqual(evalIn("(typep 2 '(member 1 2 3))"), intern("T"));
+  assert.ok(isNil(evalIn("(typep 9 '(member 1 2 3))")));
+  assert.deepEqual(evalIn("(typep 2 '(eql 2))"), intern("T"));
+  assert.deepEqual(evalIn("(typep 3 '(mod 10))"), intern("T"));
+  assert.ok(isNil(evalIn("(typep 13 '(mod 10))")));
+  assert.deepEqual(evalIn("(typep 3 '(integer * 10))"), intern("T"));
+  assert.ok(isNil(evalIn("(typep 30 '(integer * 10))")));
+});
+
+test("checks the elements a cons and a vector specifier name", () => {
+  assert.deepEqual(evalIn("(typep '(1 2) '(cons integer))"), intern("T"));
+  assert.deepEqual(evalIn("(typep '(1 . 2) '(cons integer integer))"), intern("T"));
+  // (cons integer) constrains only the car; the cdr is any type.
+  assert.ok(isNil(evalIn("(typep '(\"a\" 1) '(cons integer))")));
+  assert.deepEqual(evalIn("(typep #(1 2) '(vector integer))"), intern("T"));
+  assert.ok(isNil(evalIn("(typep #(1 \"a\") '(vector integer))")));
 });
 
 test("runs do to its end test", () => {
