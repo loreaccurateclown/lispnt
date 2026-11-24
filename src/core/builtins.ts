@@ -1,6 +1,7 @@
 import { LispEvalError } from "./errors";
 import { printValue } from "./print";
 import {
+  arrayLength,
   ArrayValue,
   BuiltInValue,
   cons,
@@ -77,6 +78,59 @@ function writeTo(stream: LispValue | undefined, text: string): void {
   if (stream === undefined || isNil(stream)) return;
   expectStream(stream).chunks.push(text);
 }
+
+// CL keyword arguments, shared by every builtin that takes them. A key Lispnt
+// does not model is our gap and is reported as unsupported-standard; a
+// non-keyword in a key position, or an odd number of arguments, is the caller's
+// mistake. A repeated key keeps its first value, which is what SBCL does.
+export function parseKeywords(
+  args: readonly LispValue[],
+  name: string,
+  allowed: ReadonlySet<string>,
+): Map<string, LispValue> {
+  if (args.length % 2 !== 0)
+    throw new LispEvalError(
+      "malformed-form",
+      null,
+      `${name}: arguments come in :keyword value pairs`,
+    );
+
+  const given = new Map<string, LispValue>();
+
+  for (let index = 0; index < args.length; index += 2) {
+    const keyword = args[index]!;
+    const key =
+      keyword.kind === "symbol" && keyword.name.startsWith(":")
+        ? keyword.name.toUpperCase()
+        : undefined;
+
+    if (key === undefined)
+      throw new LispEvalError(
+        "type-error",
+        null,
+        `${name}: expected a :keyword, got ${keyword.kind}`,
+      );
+
+    if (!allowed.has(key))
+      throw new LispEvalError(
+        "unsupported-standard",
+        null,
+        `${name} does not take ${key}`,
+      );
+
+    if (!given.has(key)) given.set(key, args[index + 1]!);
+  }
+
+  return given;
+}
+
+function expectSize(value: LispValue, name: string): number {
+  const size = expectInteger(value);
+  if (size < 0)
+    throw new LispEvalError("index-error", null, `${name}: size ${size} is negative`);
+  return size;
+}
+
 
 export function expectHashTable(value: LispValue): HashTableValue {
   if (value.kind !== "hash")
@@ -192,7 +246,7 @@ register("LENGTH", 1, 1, (args) => {
   const value = args[0]!;
   const size =
     value.kind === "array"
-      ? value.elements.length
+      ? arrayLength(value)
       : value.kind === "string"
         ? value.value.length
         : consForm(value).length;
@@ -244,22 +298,137 @@ register("ASSOC", 2, 2, (args) => {
   return NIL;
 });
 
-register("VECTOR", 0, null, (args) => {
-  const size = expectInteger(args[0]!);
-  const initial = args[2] === undefined ? NIL : args[2];
-  return {
-    kind: "array",
-    elements: args,
-  };
-});
+register("VECTOR", 0, null, (args) => ({ kind: "array", elements: args }));
+
+// MAKE-ARRAY's keywords. Each builtin that takes keywords declares the set it
+// models; anything else in a key position is our gap, not the caller's mistake.
+const MAKE_ARRAY_KEYS: ReadonlySet<string> = new Set([
+  ":INITIAL-ELEMENT",
+  ":INITIAL-CONTENTS",
+  ":ADJUSTABLE",
+  ":FILL-POINTER",
+]);
+const MAKE_STRING_KEYS: ReadonlySet<string> = new Set([":INITIAL-ELEMENT"]);
 
 register("MAKE-ARRAY", 1, null, (args) => {
-  const size = expectInteger(args[0]!);
-  const initial = args[2] === undefined ? NIL : args[2]; //:initial-element value
-  return {
-    kind: "array",
-    elements: Array.from({ length: size }, () => initial),
-  };
+  const size = expectSize(args[0]!, "MAKE-ARRAY");
+  const keywords = parseKeywords(args.slice(1), "MAKE-ARRAY", MAKE_ARRAY_KEYS);
+
+  const element = keywords.get(":INITIAL-ELEMENT");
+  const contents = keywords.get(":INITIAL-CONTENTS");
+  if (element !== undefined && contents !== undefined)
+    throw new LispEvalError(
+      "malformed-form",
+      null,
+      "MAKE-ARRAY: :initial-element and :initial-contents cannot both be given",
+    );
+
+  let elements: LispValue[];
+  if (contents !== undefined) {
+    // A list or a vector, either one is a sequence of the right length.
+    const items =
+      contents.kind === "array"
+        ? contents.elements
+        : contents.kind === "string"
+          ? [...contents.value].map<LispValue>((character) => ({
+              kind: "char",
+              value: character,
+            }))
+          : consForm(contents);
+    if (items.length !== size)
+      throw new LispEvalError(
+        "type-error",
+        null,
+        `MAKE-ARRAY: :initial-contents has ${items.length} elements, the array holds ${size}`,
+      );
+    elements = items.slice();
+  } else {
+    const initial = element ?? NIL;
+    elements = Array.from({ length: size }, () => initial);
+  }
+
+  // :adjustable has no observable effect until the array is grown, which
+  // VECTOR-PUSH-EXTEND does anyway.
+  const fill = fillPointerFrom(keywords.get(":FILL-POINTER"), size);
+  return fill === undefined
+    ? { kind: "array", elements }
+    : { kind: "array", elements, fillPointer: fill };
+});
+
+// T asks for the whole capacity; an integer below it is a partially filled
+// vector, which is how a preallocated buffer starts life.
+function fillPointerFrom(value: LispValue | undefined, size: number): number | undefined {
+  if (value === undefined) return undefined;
+
+  if (value.kind === "symbol" && value.name === "T") return size;
+
+  if (value.kind !== "number")
+    throw new LispEvalError(
+      "type-error",
+      null,
+      "MAKE-ARRAY: a fill pointer is T or an integer",
+    );
+
+  const at = expectInteger(value);
+  if (at < 0 || at > size)
+    throw new LispEvalError(
+      "index-error",
+      null,
+      `MAKE-ARRAY: fill pointer ${at} is outside an array of ${size}`,
+    );
+  return at;
+}
+
+// VECTOR-PUSH needs a fill pointer to know where the end is; VECTOR-PUSH-EXTEND
+// grows the vector instead of returning NIL, which is what the preallocated
+// vector and binary-heap idioms rely on.
+function pushOntoVector(
+  args: readonly LispValue[],
+  extend: boolean,
+  name: string,
+): LispValue {
+  const item = args[0]!;
+  const vector = expectArray(args[1]!);
+  if (args.length > 2)
+    throw new LispEvalError(
+      "unsupported-standard",
+      null,
+      `${name}: the extension argument is not implemented`,
+    );
+
+  const fill = vector.fillPointer;
+  if (fill === undefined)
+    throw new LispEvalError(
+      "type-error",
+      null,
+      `${name}: the vector has no fill pointer`,
+    );
+
+  if (fill < vector.elements.length) {
+    vector.elements[fill] = item;
+    vector.fillPointer = fill + 1;
+    return { kind: "number", value: fill };
+  }
+
+  if (!extend) return NIL;
+
+  vector.elements.push(item);
+  vector.fillPointer = fill + 1;
+  return { kind: "number", value: fill };
+}
+
+register("VECTOR-PUSH", 2, 2, (args) => pushOntoVector(args, false, "VECTOR-PUSH"));
+register("VECTOR-PUSH-EXTEND", 2, null, (args) =>
+  pushOntoVector(args, true, "VECTOR-PUSH-EXTEND"),
+);
+
+register("MAKE-STRING", 1, null, (args) => {
+  const size = expectSize(args[0]!, "MAKE-STRING");
+  const keywords = parseKeywords(args.slice(1), "MAKE-STRING", MAKE_STRING_KEYS);
+  const element = keywords.get(":INITIAL-ELEMENT");
+  // CL leaves an unspecified character; SBCL fills with spaces.
+  const character = element === undefined ? " " : expectCharValue(element);
+  return { kind: "string", value: character.repeat(size) };
 });
 
 register("AREF", 2, 2, (args) => {
@@ -413,19 +582,6 @@ register("MIN", 1, null, (args) => {
   return { kind: "number", value: best };
 });
 
-// CL's COUNT takes :test, :key, :start, :end and :from-end. Lispnt has no
-// keyword arguments anywhere, so this is the two-argument form and the arity
-// check is what a keyword call meets.
-register("COUNT", 2, 2, (args) => {
-  const item = args[0]!;
-  const sequence = args[1]!;
-  const items =
-    sequence.kind === "array" ? sequence.elements : consForm(sequence);
-  let total = 0;
-  for (const candidate of items) if (isEqual(candidate, item)) total += 1;
-  return { kind: "number", value: total };
-});
-
 register("BUTLAST", 1, 2, (args) => {
   const items = consForm(args[0]!);
   const count = args[1] === undefined ? 1 : expectInteger(args[1]);
@@ -568,11 +724,18 @@ const hashTests: ReadonlyMap<string, HashTest> = new Map<string, HashTest>([
   ["EQUALP", "equalp"],
 ]);
 
+// A :test is a function designator, so the symbol naming one works as well as
+// the function value itself.
 function hashTestFromFunction(value: LispValue): HashTest {
-  if (value.kind === "builtin") {
-    const test = hashTests.get(value.name);
-    if (test !== undefined) return test;
-  }
+  const name =
+    value.kind === "builtin"
+      ? value.name
+      : value.kind === "symbol"
+        ? value.name
+        : "";
+  const test = hashTests.get(name);
+  if (test !== undefined) return test;
+
   throw new LispEvalError(
     "unsupported-standard",
     null,
@@ -580,28 +743,29 @@ function hashTestFromFunction(value: LispValue): HashTest {
   );
 }
 
+// :size and the rehash hints describe how the table is laid out. CL gives them
+// no effect a program can observe, so they are checked and then ignored.
+const MAKE_HASH_TABLE_KEYS: ReadonlySet<string> = new Set([
+  ":TEST",
+  ":SIZE",
+  ":REHASH-SIZE",
+  ":REHASH-THRESHOLD",
+]);
+
 register("MAKE-HASH-TABLE", 0, null, (args) => {
-  let test: HashTest = "eql";
+  const keywords = parseKeywords(args, "MAKE-HASH-TABLE", MAKE_HASH_TABLE_KEYS);
 
-  for (let index = 0; index < args.length; index += 2) {
-    const keyword = args[index]!;
-    const name = keyword.kind === "symbol" ? keyword.name : "";
-    if (name !== ":TEST")
-      throw new LispEvalError(
-        "unsupported-standard",
-        null,
-        `MAKE-HASH-TABLE: the ${name || keyword.kind} option is not implemented`,
-      );
+  const testNode = keywords.get(":TEST");
+  const test: HashTest = testNode === undefined ? "eql" : hashTestFromFunction(testNode);
 
-    const value = args[index + 1];
-    if (value === undefined)
-      throw new LispEvalError(
-        "malformed-form",
-        null,
-        "MAKE-HASH-TABLE: :test needs a function",
-      );
-    test = hashTestFromFunction(value);
-  }
+  const size = keywords.get(":SIZE");
+  if (size !== undefined) expectSize(size, "MAKE-HASH-TABLE");
+
+  const rehashSize = keywords.get(":REHASH-SIZE");
+  if (rehashSize !== undefined) expectNumber(rehashSize);
+
+  const rehashThreshold = keywords.get(":REHASH-THRESHOLD");
+  if (rehashThreshold !== undefined) expectNumber(rehashThreshold);
 
   return { kind: "hash", test, entries: new Map() };
 });

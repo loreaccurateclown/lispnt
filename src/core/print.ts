@@ -1,4 +1,4 @@
-import type { ArrayValue, ConsValue, LispValue, StructValue } from "./values";
+import { arrayLength, type ArrayValue, type ConsValue, type LispValue, type StructValue } from "./values";
 
 export interface PrintOptions {
   maxElements?: number;
@@ -124,7 +124,8 @@ function renderArray(
   state.ancestors.add(array);
   const parts: string[] = [];
 
-  for (const element of array.elements) {
+  // A vector with a fill pointer prints the part that is filled, as CL does.
+  for (const element of array.elements.slice(0, arrayLength(array))) {
     if (parts.length >= state.maxElements) {
       parts.push("...");
       break;

@@ -99,6 +99,15 @@ test("prints a vector literal with its elements", () => {
   assert.equal(printValue(vec(num(1), num(2))), "#(1 2)");
 });
 
+test("prints a vector only up to its fill pointer", () => {
+  const array: ArrayValue = {
+    kind: "array",
+    elements: [num(1), num(2), num(3)],
+    fillPointer: 2,
+  };
+  assert.equal(printValue(array), "#(1 2)");
+});
+
 test("prints a vector nested inside a list", () => {
   assert.equal(printValue(list(vec(num(1)))), "(#(1))");
 });

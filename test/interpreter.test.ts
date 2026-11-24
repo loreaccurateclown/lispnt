@@ -528,6 +528,11 @@ test("builds an array with vector", () => {
   });
 });
 
+test("builds an empty array with vector and no arguments", () => {
+  assert.equal(printValueOf("(vector)"), "#()");
+  assert.deepEqual(evalIn("(length (vector))"), num(0));
+});
+
 test("reads an array element with aref", () => {
   assert.deepEqual(run("(aref (vector 1 2 3) 1)"), num(2));
 });
@@ -542,6 +547,68 @@ test("reads a list element with elt", () => {
 
 test("measures array length", () => {
   assert.deepEqual(run("(length (vector 1 2 3))"), num(3));
+});
+
+test("builds an array from :initial-contents", () => {
+  assert.equal(printValueOf("(make-array 3 :initial-contents '(1 2 3))"), "#(1 2 3)");
+  assert.equal(printValueOf("(make-array 2 :initial-contents #(4 5))"), "#(4 5)");
+});
+
+test("rejects :initial-contents of the wrong length", () => {
+  assert.equal(errorCodeOf("(make-array 3 :initial-contents '(1 2))"), "type-error");
+});
+
+test("reports an array keyword it does not model as our gap", () => {
+  assert.equal(
+    errorCodeOf("(make-array 3 :element-type 'fixnum)"),
+    "unsupported-standard",
+  );
+});
+
+test("rejects a bad keyword argument list", () => {
+  assert.equal(errorCodeOf("(make-array 3 1 2)"), "type-error");
+  assert.equal(errorCodeOf("(make-array 3 :initial-element)"), "malformed-form");
+});
+
+test("counts a vector only up to its fill pointer", () => {
+  assert.equal(
+    printValueOf("(setf v (make-array 3 :fill-pointer 0)) (vector-push 7 v) v"),
+    "#(7)",
+  );
+  assert.deepEqual(
+    evalIn("(setf v (make-array 3 :fill-pointer 0)) (vector-push 7 v) (length v)"),
+    num(1),
+  );
+});
+
+test("pushes onto a full vector only through vector-push-extend", () => {
+  assert.ok(isNil(evalIn("(setf v (make-array 1 :fill-pointer 1)) (vector-push 9 v)")));
+  assert.deepEqual(
+    evalIn("(setf v (make-array 1 :fill-pointer 1)) (vector-push-extend 9 v)"),
+    num(1),
+  );
+  assert.equal(
+    printValueOf("(setf v (make-array 1 :fill-pointer 1)) (vector-push-extend 9 v) v"),
+    "#(NIL 9)",
+  );
+});
+
+test("needs a fill pointer to push", () => {
+  assert.equal(errorCodeOf("(vector-push 1 (make-array 2))"), "type-error");
+  assert.equal(errorCodeOf("(vector-push-extend 1 (make-array 2))"), "type-error");
+});
+
+test("keeps aref bounded by capacity, not by the fill pointer", () => {
+  assert.ok(isNil(evalIn("(setf v (make-array 5 :fill-pointer 0)) (aref v 4)")));
+  assert.equal(
+    errorCodeOf("(setf v (make-array 2 :fill-pointer 0)) (aref v 2)"),
+    "index-error",
+  );
+});
+
+test("makes a string of spaces or of one repeated character", () => {
+  assert.equal(printValueOf("(make-string 3)"), '"   "');
+  assert.equal(printValueOf("(make-string 3 :initial-element #\\a)"), '"aaa"');
 });
 
 test("writes an array element through an aref place", () => {
@@ -1025,7 +1092,21 @@ test("takes the largest and smallest", () => {
 test("counts matches in a list and in a vector", () => {
   assert.deepEqual(evalIn("(count 3 '(1 3 2 3))"), num(2));
   assert.deepEqual(evalIn("(count 3 #(3 3))"), num(2));
-  assert.deepEqual(evalIn("(count '(1) (list '(1) '(2)))"), num(1));
+  // COUNT defaults to EQL, as CL does: two equal but distinct lists do not match.
+  assert.deepEqual(evalIn("(count '(1) (list '(1) '(2)))"), num(0));
+});
+
+test("counts with :test and :key", () => {
+  assert.deepEqual(evalIn("(count '(1) (list '(1) '(2)) :test #'equal)"), num(1));
+  assert.deepEqual(evalIn("(count 2 '((1) (2) (2)) :key #'car)"), num(2));
+  assert.deepEqual(evalIn('(count #\\a "banana")'), num(3));
+});
+
+test("sorts with :key", () => {
+  assert.equal(
+    printValueOf("(sort '((3 c) (1 a) (2 b)) #'< :key #'car)"),
+    "((1 A) (2 B) (3 C))",
+  );
 });
 
 test("drops the last element, or the last n", () => {
@@ -1651,15 +1732,29 @@ test("matches string keys by value", () => {
   );
 });
 
-test("refuses hash options and test functions it does not model", () => {
-  for (const source of [
-    "(make-hash-table :size 10)",
-    "(make-hash-table :test #'string=)",
-  ]) {
-    assert.throws(() => evalIn(source), (error: unknown) => {
+test("accepts :size and the rehash hints as layout hints", () => {
+  assert.deepEqual(
+    evalIn(
+      "(setf h (make-hash-table :size 10 :rehash-size 2 :rehash-threshold 0.5)) (setf (gethash 'a h) 1) (hash-table-count h)",
+    ),
+    num(1),
+  );
+});
+
+test("takes a :test as a function or as a symbol naming one", () => {
+  assert.deepEqual(
+    evalIn("(setf h (make-hash-table :test 'eq)) (setf (gethash 'a h) 1) (gethash 'a h)"),
+    num(1),
+  );
+});
+
+test("refuses a hash test function it does not model", () => {
+  assert.throws(
+    () => evalIn("(make-hash-table :test #'string=)"),
+    (error: unknown) => {
       return error instanceof LispEvalError && error.code === "unsupported-standard";
-    }, source);
-  }
+    },
+  );
 });
 
 test("walks hash keys and values with LOOP", () => {
@@ -1697,6 +1792,36 @@ test("calls a function per entry with maphash", () => {
     "(let ((total 0)) (maphash (lambda (k v) (setf total (+ total v))) h) total)",
   ].join(" ");
   assert.deepEqual(evalIn(source), num(3));
+});
+
+test("walks a hash table with with-hash-table-iterator", () => {
+  const read = [
+    "(setf h (make-hash-table))",
+    "(setf (gethash 'a h) 1)",
+    "(with-hash-table-iterator (next h) (multiple-value-bind (more k v) (next) (list more k v)))",
+  ].join(" ");
+  assert.equal(printValueOf(read), "(T A 1)");
+
+  // Once the entries run out the function answers NIL, and only NIL.
+  const exhausted = [
+    "(setf h (make-hash-table))",
+    "(setf (gethash 'a h) 1)",
+    "(with-hash-table-iterator (next h) (list (next) (next)))",
+  ].join(" ");
+  assert.equal(printValueOf(exhausted), "(T NIL)");
+});
+
+test("drains a hash table with a LOOP over with-hash-table-iterator", () => {
+  const source = [
+    "(setf h (make-hash-table))",
+    "(setf (gethash 'a h) 1)",
+    "(setf (gethash 'b h) 2)",
+    "(setf out nil)",
+    "(with-hash-table-iterator (next h)",
+    "  (loop (multiple-value-bind (more k v) (next)",
+    "          (if more (push (list k v) out) (return out)))))",
+  ].join(" ");
+  assert.equal(printValueOf(source), "((B 2) (A 1))");
 });
 
 //LLM-written tests for FORMAT

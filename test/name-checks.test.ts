@@ -175,6 +175,14 @@ test("accepts keyword arguments after &key", () => {
   assert.deepEqual(codes("(defun f (&key a) a) (f :a 1)"), []);
 });
 
+test("checks the arity of a keyword builtin that lives in the interpreter", () => {
+  // COUNT and SORT are registered beside FUNCALL because they call functions;
+  // the checker still has to see them.
+  assert.deepEqual(codes("(count 1)"), ["arity"]);
+  assert.deepEqual(codes("(sort '(2 1))"), ["arity"]);
+  assert.deepEqual(codes("(count 1 '(1) :test #'=)"), []);
+});
+
 test("checks the default value forms in a lambda list", () => {
   assert.deepEqual(codes("(defun f (&optional (a missing)) a)"), [
     "unbound-variable",

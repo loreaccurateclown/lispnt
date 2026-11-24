@@ -1,5 +1,6 @@
 import {
   NIL,
+  arrayLength,
   cons,
   intern,
   isNil,
@@ -28,6 +29,7 @@ import {
   hashTableKey,
   isEq,
   listFrom,
+  parseKeywords,
   register,
   structTypeNames,
 } from "./builtins";
@@ -142,6 +144,7 @@ export const SPECIAL_FORMS: ReadonlySet<string> = new Set([
   "CCASE",
   "LOOP",
   "WITH-OUTPUT-TO-STRING",
+  "WITH-HASH-TABLE-ITERATOR",
   "MULTIPLE-VALUE-BIND",
   "MULTIPLE-VALUE-SETQ",
   "MULTIPLE-VALUE-LIST",
@@ -444,6 +447,8 @@ function evaluateInner(node: AstNode, env: Env): LispValue {
         return evalLoop(node, env);
       case "WITH-OUTPUT-TO-STRING":
         return evalWithOutputStream(node, env);
+      case "WITH-HASH-TABLE-ITERATOR":
+        return evalWithHashTableIterator(node, env);
       case "MULTIPLE-VALUE-BIND":
         return evalMultipleValueBind(node, env);
       case "MULTIPLE-VALUE-SETQ":
@@ -922,14 +927,25 @@ register("MAPHASH", 2, 2, (args) => {
 
 // SORT calls a comparator, so it lives here with FUNCALL and APPLY. CL's sort is
 // destructive; this one copies, so a recorded snapshot cannot change under a
-// hint, and JS's stable sort makes it stable where CL promises nothing.
-register("SORT", 2, 2, (args) => {
+// hint, and JS's stable sort makes it stable where CL promises nothing. A :key
+// is applied per comparison, which is what SBCL does — CL leaves the number of
+// calls unspecified, and a key with side effects is a mistake either way.
+const SORT_KEYS: ReadonlySet<string> = new Set([":KEY"]);
+
+register("SORT", 2, null, (args) => {
   const sequence = args[0]!;
   const predicate = args[1]!;
+  const keywords = parseKeywords(args.slice(2), "SORT", SORT_KEYS);
+  const key = keywords.get(":KEY");
+
+  const comparable = (value: LispValue): LispValue =>
+    key === undefined ? value : callValue(key, [value]);
 
   const compare = (left: LispValue, right: LispValue): number => {
-    if (isTruthy(callValue(predicate, [left, right]))) return -1;
-    if (isTruthy(callValue(predicate, [right, left]))) return 1;
+    const leftKey = comparable(left);
+    const rightKey = comparable(right);
+    if (isTruthy(callValue(predicate, [leftKey, rightKey]))) return -1;
+    if (isTruthy(callValue(predicate, [rightKey, leftKey]))) return 1;
     return 0;
   };
 
@@ -961,6 +977,46 @@ register("SORT", 2, 2, (args) => {
     null,
     `SORT: expected a sequence, got ${sequence.kind}`,
   );
+});
+
+// COUNT defaults to EQL, as CL does, and takes :test and :key — so it can call a
+// user function and lives here beside SORT rather than in builtins.
+const COUNT_KEYS: ReadonlySet<string> = new Set([":TEST", ":KEY"]);
+
+register("COUNT", 2, null, (args) => {
+  const item = args[0]!;
+  const sequence = args[1]!;
+  const keywords = parseKeywords(args.slice(2), "COUNT", COUNT_KEYS);
+  const test = keywords.get(":TEST");
+  const key = keywords.get(":KEY");
+
+  const elements = (): LispValue[] => {
+    if (sequence.kind === "array")
+      return sequence.elements.slice(0, arrayLength(sequence));
+    if (sequence.kind === "string")
+      return [...sequence.value].map<LispValue>((character) => ({
+        kind: "char",
+        value: character,
+      }));
+    if (sequence.kind === "cons" || isNil(sequence)) return consForm(sequence);
+    throw new LispEvalError(
+      "type-error",
+      null,
+      `COUNT: expected a sequence, got ${sequence.kind}`,
+    );
+  };
+
+  let total = 0;
+  for (const candidate of elements()) {
+    const subject = key === undefined ? candidate : callValue(key, [candidate]);
+    const matches =
+      test === undefined
+        ? isEq(item, subject)
+        : isTruthy(callValue(test, [item, subject]));
+    if (matches) total += 1;
+  }
+
+  return { kind: "number", value: total };
 });
 //helper for resolve place along with arrayAndIndex
 function expectConsPlace(form: ListNode, env: Env): ConsValue {
@@ -1984,6 +2040,50 @@ function evalWithOutputStream(form: ListNode, env: Env): LispValue {
   evaluateBody(form.children.slice(2), scope);
 
   return { kind: "string", value: stream.chunks.join("") };
+}
+
+// (with-hash-table-iterator (next table) body…) binds NEXT to a function of no
+// arguments that hands back three values — true, key, value — until the table is
+// exhausted. It needs the evaluator because it builds a closure over the entries.
+function evalWithHashTableIterator(form: ListNode, env: Env): LispValue {
+  const spec = form.children[1];
+  if (spec === undefined || spec.kind !== "list" || spec.children.length !== 2)
+    throw new LispEvalError(
+      "malformed-form",
+      form.start,
+      "with-hash-table-iterator needs (function table) before its body",
+    );
+
+  const nameNode = spec.children[0];
+  const tableNode = spec.children[1];
+  const name = nameNode === undefined ? undefined : symbolName(nameNode);
+  if (name === undefined)
+    throw new LispEvalError(
+      "malformed-form",
+      form.start,
+      "with-hash-table-iterator needs a function name",
+    );
+
+  const table = expectHashTable(evaluate(tableNode!, env));
+  const entries = [...table.entries.values()];
+  let cursor = 0;
+
+  const next: BuiltInValue = {
+    kind: "builtin",
+    name,
+    min: 0,
+    max: 0,
+    fn: () => {
+      const entry = entries[cursor];
+      if (entry === undefined) return NIL;
+      cursor += 1;
+      return { kind: "values", values: [intern("T"), entry.key, entry.value] };
+    },
+  };
+
+  const scope = createEnv(env);
+  define(scope, name, next);
+  return evaluateBody(form.children.slice(2), scope);
 }
 // The body's last form is evaluated without taking the primary value, so the
 // call observer can report all of them.

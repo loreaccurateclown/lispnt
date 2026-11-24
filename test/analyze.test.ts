@@ -213,6 +213,18 @@ test("reports nothing for valid evaluable code", () => {
   assert.deepEqual(analyze("(progn (defun sq (x) (* x x)) (sq 4))"), []);
 });
 
+test("stays silent on a keyword argument Lispnt does not model", () => {
+  // :element-type is real CL we have not built, so the whole call is our gap.
+  assert.deepEqual(analyze("(make-array 3 :element-type 'fixnum)"), []);
+});
+
+test("reports a keyword argument list the learner got wrong", () => {
+  const diagnostics = analyze("(make-array 3 :initial-element)");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0]?.code, "malformed-form");
+});
+
 test("stops a long running loop with an evaluation budget", () => {
   const diagnostics = analyze("(dotimes (i 100000000) (setq x 1))");
 

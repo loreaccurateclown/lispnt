@@ -21,7 +21,14 @@ export interface Place {
 }
 
 //mutable
-export type ArrayValue = { kind: "array"; elements: LispValue[] };
+// A vector may carry a fill pointer: length and printing stop there, while aref
+// stays bounded by the capacity, which is what lets the push-then-read idiom
+// work on a big preallocated vector.
+export type ArrayValue = {
+  kind: "array";
+  elements: LispValue[];
+  fillPointer?: number;
+};
 // A structure instance: its type name, and its slots in definition order. A
 // defstruct accessor is setf-able in CL unless the slot is :read-only, so the
 // slot map is mutable.
@@ -101,6 +108,12 @@ export type BuiltInValue = {
 
 export const NIL: NilValue = { kind: "nil" };
 export const symbols = new Map<string, SymbolValue>();
+
+// How many elements a vector is said to hold: its fill pointer when it has one,
+// otherwise its capacity.
+export function arrayLength(value: ArrayValue): number {
+  return value.fillPointer ?? value.elements.length;
+}
 
 export function cons(car: LispValue, cdr: LispValue): ConsValue {
   return { kind: "cons", car, cdr };
