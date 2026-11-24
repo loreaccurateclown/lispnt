@@ -34,13 +34,16 @@ Tests: **745** across fourteen suites — 70 reader, 55 analyze, 293 interpreter
 24 trace-cases, 9 trace-tree, 10 value-hints, 38 extension. `npm test` is green
 at `206d06f`; the tree should be clean at the end of a slice.
 
-Corpus: **44 files** (7 under `lisp_test_files/`, 37 under
-`G:\My Drive\Labs\CPS305`). `analyze` reports **11 diagnostics**: the base ten on
-two files (`lab04/q1.lisp`'s undefined `PI`; the `sum-kids`/`depth-kids`/`kids`
-cluster in `patterns_test2/list_search.lisp`) plus one `trace-marker` warning for
-an empty `;;[trace]` still sitting in `lab08/q1.lisp`. Its twin in
-`lab05-assign-v4/q3.lisp` has been filled. 8 of the 44 produce a trace frame
-(the seven repo test files and that q3); 13 produce a value hint once markers run.
+Corpus: **43 files** (6 under `lisp_test_files/` and 37 under
+`G:\My Drive\Labs\CPS305`; the seventh file in `lisp_test_files/` is
+`backup/recursion_nested_lists.lisp`, a duplicate the check skips). `analyze`
+reports **10 diagnostics** on two files only: `lab04/q1.lisp`'s undefined `PI`,
+and the `sum-kids`/`depth-kids`/`kids` cluster in
+`patterns_test2/list_search.lisp`. Both CPS305 `;;[trace]` markers are filled —
+`lab05-assign-v4/q3.lisp` and `lab08/q1.lisp` (5 calls, max depth 2, `2`), so the
+corpus carries no `trace-marker` warning. 8 of the 43 produce a trace frame (the
+six repo test files, that q3 and `lab08/q1`); 13 produce a value hint once
+markers run.
 
 ## Repo and toolchain
 
@@ -231,9 +234,8 @@ include `EvalError`, `Node`, `Element`, `Event`, `Text`, `Range`, `File`.
    the reader; `handler-case`; the opaque standard forms above; unused bindings;
    type inference; the unfinished LOOP walk (atoms in driver positions); call-site
    positions for tree navigation; a counting trace mode; multi-line trace markers.
-5. The two CPS305 markers: q3 is done; `lab08/q1.lisp` still needs
-   `;;[trace] (BTREE-COUNT-SINGLE-CHILDREN (make-tree-node :key 1 :lc (make-tree-node :key 2) :rc (make-tree-node :key 3 :lc (make-tree-node :key 4))))`
-   (expected: 5 calls, depth 2, `2`), which will drop the corpus to 10.
+
+Both CPS305 `;;[trace]` markers are filled, so nothing is outstanding there.
 
 ## How to check the corpus
 
@@ -241,7 +243,7 @@ No committed script. After `npm run build`, walk `lisp_test_files/` and
 `G:\My Drive\Labs\CPS305` for `*.lisp`/`*.lsp` (skip `backup`), and for each file
 run `analyze`, `collectHints(source, {calls: traceExpressions(source)})` and
 `traceCases`; report diagnostics by code and file, files with a hint, files with a
-frame. Expected: 44 files, 11 diagnostics, 13 files with hints, 8 with frames.
+frame. Expected: 43 files, 10 diagnostics, 13 files with hints, 8 with frames.
 
 Trace spot-checks that should hold (all verified against SBCL):
 
