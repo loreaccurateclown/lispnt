@@ -3,8 +3,39 @@
 [![CI](https://github.com/loreaccurateclown/lispnt/actions/workflows/ci.yml/badge.svg)](https://github.com/loreaccurateclown/lispnt/actions/workflows/ci.yml)
 
 A read-only diagnostic path for Common Lisp, aimed at learners on SBCL, as a VS
-Code extension that sits alongside OLIVE/SBCL.
+Code extension that sits alongside OLIVE/SBCL. Implements a limited subset of Lisp's syntax. Not meant for serious Lisp development.
 
+
+
+## Human Summary of Project
+I wrote this (or more accurately, asked an LLM to write this) because I couldn't find a learner-oriented inline linter for Common Lisp (Steel Bank Common Lisp). I am learning data structures through Lisp and generally write single files or functions that demonstrate a concept and have an execution flow of being loaded and compiled, then called directly by the function name in SBCL's REPL with a test case. This does not replace any other lisp extensions that I know of, because it does one very specific thing in the most lightweight manner possible: **Check your CL code for errors before you have to mess with the REPL.** 
+
+### Why?
+I find the `(load "filename.lisp")` -> `(compile-file "filename.lisp")` -> `(fnname (test-case))` loop to be very slow coming from modern languages like Python, Java, etc. The other issue is that even if I was okay with `Alt + Up Arrow`'ing through those three commands every time I wanted to edit something or fix a bug, or even if I wanted to prototype something or print values for manual debug, I would have to run those 3 commands. If I want to trace a function SBCL has a beautiful trace, but it requires both tracing and untracing. It is of course a programmatic macro that can be specified in the source file, but this both enables a global trace state that has to be untraced from (nonintuitive), and also I'm just honestly pretty bad at Lisp and would consider this another failure point while I'm still trying to remember where my brackets broke.
+
+Finally, I frequently just do not have any idea what SBCL's debugger is trying to communicate to me. This is absolutely a skill issue, but that's the exact reason Lispnt exists, to bridge that knowledge gap with learner-friendly messaging and marking of invalid syntax. 
+
+### Lispnt's Purpose
+Lispnt reads your code and tries to identify common errors a learner would make, such as broken brackets, incorrect arity (# of arguments) of functions, inline view of function values and two trace summary views: one as a VS Code widget and one as a simple text file, invoked in the file by placing a comment with:
+`;; [trace] (test-case)`
+Above or near the relevant function. None of this requires any bothering of SBCL, so you can trace without having to modify your code or clutter your REPL's command history. Hopefully it might even debug common syntax/logic errors before you go through the entire process just to find out you needed two brackets for that `(let)` var instead of one. 
+
+### What it does Not do
+Check the bottom of this readme in the LLM written section for a list of things not implemented. Mostly I chose not to implement things I hadn't used or didn't understand. The biggest and possibly most confusing gap is most likely our **partial implementation of the `(loop)` form/sublanguage**. It is unfortunately far too much for me to accurately supervise an LLM when I barely understand how basic `(loop)`s work. Feel free to fork your own copy, this is MIT Licensed.
+
+
+
+# 
+### Environmental Impact of LLM Use 
+I used Neuralwatt's [nw-flash model](https://portal.neuralwatt.com/models/nw-flash), currently pointing to DeepSeek V4.1 Flash 1017. I moved between the flex tier (somewhat more energy efficient, cheaper) and regular nw-flash, but the majority of development was on nw-flash.
+### Stats
+| Energy Consumption | CO<sub>2</sub> generated (mass) |
+|--------------------|---------------------------------|
+| 2.70 kWh  | 1.03 kg |
+
+<br>
+
+## README (LLM Written)
 The promise: **find the mistake before SBCL's debugger does.** Learner code is
 usually a set of `defun`s loaded and compiled in the REPL, so everything here
 exists to shorten that loop — without a live Lisp image. Lispnt parses the open
