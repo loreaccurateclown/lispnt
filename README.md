@@ -11,17 +11,17 @@ Code extension that sits alongside OLIVE/SBCL. Implements a limited subset of Co
 I wrote this (or more accurately, asked an LLM to write this) because I couldn't find a learner-oriented inline linter for Common Lisp (Steel Bank Common Lisp). I am learning data structures through Lisp and generally write single files or functions that demonstrate a concept and have an execution flow of being loaded and compiled, then called directly by the function name in SBCL's REPL with a test case. This does not replace any other lisp extensions that I know of, because it does one very specific thing in the most lightweight manner possible: **Check your CL code for errors before you have to mess with the REPL.** 
 
 ### Why?
-I find the `(load "filename.lisp")` -> `(compile-file "filename.lisp")` -> `(fnname (test-case))` loop to be very slow coming from modern languages like Python, Java, etc. The other issue is that even if I was okay with `Alt + Up Arrow`'ing through those three commands every time I wanted to edit something or fix a bug, or even if I wanted to prototype something or print values for manual debug, I would have to run those 3 commands. If I want to trace a function SBCL has a beautiful trace, but it requires both tracing and untracing. It is of course a programmatic macro that can be specified in the source file, but this both enables a global trace state that has to be untraced from (nonintuitive), and also I'm just honestly pretty bad at Lisp and would consider this another failure point while I'm still trying to remember where my brackets broke.
+I find the `(load "filename.lisp")` -> `(compile-file "filename.lisp")` -> `(fnname (test-case))` loop to be very slow coming from modern languages like Python, Java, etc. The other issue is that even if I was okay with `Alt + Up Arrow`'ing through those three commands every time I wanted to edit something or fix a bug, or even if I wanted to prototype something or print values for manual debug, I would have to run those 3 commands. If I want to trace a function SBCL has a beautiful trace, but it requires both tracing and untracing. It is of course a programmatic macro that can be specified in the source file, but this both enables a global trace state that has to be untraced from (nonintuitive), and also I'm just honestly pretty bad at Lisp and would consider this another potential point of failure while I'm still trying to remember where my brackets broke.
 
-Finally, I frequently just do not have any idea what SBCL's debugger is trying to communicate to me. This is absolutely a skill issue, but that's the exact reason Lispnt exists, to bridge that knowledge gap with learner-friendly messaging and marking of invalid syntax. 
+Finally, I frequently just do not have any idea what SBCL's debugger is trying to communicate to me. This is absolutely a skill issue. Still, that's the exact reason Lispnt exists, to bridge that knowledge gap with learner-friendly messaging and marking of invalid syntax. 
 
 ### Lispnt's Purpose
 Lispnt reads your code and tries to identify common errors a learner would make, such as broken brackets, incorrect arity (# of arguments) of functions, end of line view of value hints and two trace summary views: one as a VS Code widget and one as a simple text file, invoked in the file by placing a comment with:
 `;; [trace] (test-case)`
-Above or near the relevant function. None of this requires any bothering of SBCL, so you can trace without having to modify your code or clutter your REPL's command history. Hopefully it might even debug common syntax/logic errors before you go through the entire process just to find out you needed two brackets for that `(let)` var instead of one. 
+Above or near the relevant function. None of this requires any bothering of SBCL, so you can trace without having to modify your code or clutter your REPL's command history. Hopefully it might even debug common syntax/logic errors before you go through the entire load/compile/run process in the REPL just to find out you forgot to type two brackets for that `(let)` var instead of one. 
 
 ### What it does Not do
-Check the bottom of this readme in the LLM written section for a list of things not implemented. Mostly I chose not to implement things I hadn't used or didn't understand. The biggest and possibly most confusing gap is most likely our **partial implementation of the `(loop)` form/sublanguage**. It is unfortunately far too much for me to accurately supervise an LLM when I barely understand how basic `(loop)`s work. Feel free to fork your own copy, this is MIT Licensed.
+Check the bottom of this readme in the LLM written section for a list of things not implemented. Mostly I chose not to implement things I hadn't used or didn't understand. The biggest and possibly most confusing gap is most likely our **partial implementation of the `(loop)` form/sublanguage**. It is unfortunately far too much for me to accurately supervise an LLM's implementation of that feature when I barely understand how basic `(loop)`s work. Feel free to fork your own copy, this is MIT Licensed.
 
 
 
@@ -196,6 +196,6 @@ MIT. See [LICENSE](LICENSE).
 
 The activity-bar icon is the λ glyph outline traced from Cascadia Code, which is
 licensed under the SIL Open Font License; the SVG's comment records the
-provenance.
+provenance. Squiggles artisanally generated by the finest of fish-based Large Language Models.
 
 
