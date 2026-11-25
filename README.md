@@ -33,6 +33,7 @@ I used Neuralwatt's [nw-flash model](https://portal.neuralwatt.com/models/nw-fla
 |--------------------|---------------------------------|
 | 2.70 kWh  | 1.03 kg |
 
+In understandable terms, 1.03kg CO<sub>2</sub> is roughly 5.7km driven in a base model 2025 Hyundai Elantra using data from Open Government Canada's [2025 Fuel Consumption Ratings dataset](https://open.canada.ca/data/en/dataset/98f1a129-f628-4ce4-b24d-6f16bf24dd64/resource/d589f2bc-9a85-4f65-be2f-20f17debfcb1)
 <br>
 
 ## README (LLM Written)
