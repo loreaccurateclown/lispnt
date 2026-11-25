@@ -1,7 +1,7 @@
 {
   "name": "lispnt",
   "displayName": "Lispnt",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "SK-Clownsoft",
   "private": true,
   "description": "Lispnt - a gentle, read-only diagnostic path for Common Lisp (SBCL), alongside OLIVE.",
