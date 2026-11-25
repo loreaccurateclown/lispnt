@@ -3,7 +3,7 @@
 [![CI](https://github.com/loreaccurateclown/lispnt/actions/workflows/ci.yml/badge.svg)](https://github.com/loreaccurateclown/lispnt/actions/workflows/ci.yml)
 
 A read-only diagnostic path for Common Lisp, aimed at learners on SBCL, as a VS
-Code extension that sits alongside OLIVE/SBCL. Implements a limited subset of Lisp's syntax. Not meant for serious Lisp development.
+Code extension that sits alongside OLIVE/SBCL. Implements a limited subset of Common Lisp. Not meant for serious Lisp development.
 
 
 
@@ -16,7 +16,7 @@ I find the `(load "filename.lisp")` -> `(compile-file "filename.lisp")` -> `(fnn
 Finally, I frequently just do not have any idea what SBCL's debugger is trying to communicate to me. This is absolutely a skill issue, but that's the exact reason Lispnt exists, to bridge that knowledge gap with learner-friendly messaging and marking of invalid syntax. 
 
 ### Lispnt's Purpose
-Lispnt reads your code and tries to identify common errors a learner would make, such as broken brackets, incorrect arity (# of arguments) of functions, inline view of function values and two trace summary views: one as a VS Code widget and one as a simple text file, invoked in the file by placing a comment with:
+Lispnt reads your code and tries to identify common errors a learner would make, such as broken brackets, incorrect arity (# of arguments) of functions, end of line view of value hints and two trace summary views: one as a VS Code widget and one as a simple text file, invoked in the file by placing a comment with:
 `;; [trace] (test-case)`
 Above or near the relevant function. None of this requires any bothering of SBCL, so you can trace without having to modify your code or clutter your REPL's command history. Hopefully it might even debug common syntax/logic errors before you go through the entire process just to find out you needed two brackets for that `(let)` var instead of one. 
 
