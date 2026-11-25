@@ -786,7 +786,7 @@ test("reports an undefined function in a body nothing calls", () => {
     ["undefined-function"],
   );
   assert.equal(diagnostics[0]?.severity, "warning");
-  assert.match(diagnostics[0]?.message ?? "", /load that file first/);
+  assert.match(diagnostics[0]?.message ?? "", /one file at a time/);
 });
 
 test("reports a variable called as a function in a body nothing calls", () => {
@@ -821,7 +821,7 @@ test("reports a name mistake once, in the checker's wording", () => {
   const diagnostics = analyze("(foo 1)");
 
   assert.equal(diagnostics.length, 1);
-  assert.match(diagnostics[0]?.message ?? "", /load that file first/);
+  assert.match(diagnostics[0]?.message ?? "", /one file at a time/);
 });
 
 test("keeps a runtime type error next to a name check", () => {

@@ -27,6 +27,23 @@ test("stays quiet about undefined functions when the file loads another", () => 
   assert.deepEqual(codes('(load "other.lisp") (defun g () (missing-fn))'), []);
 });
 
+test("only a top-level load silences undefined functions", () => {
+  assert.deepEqual(
+    codes('(defun g () (load "other.lisp") (missing-fn))'),
+    ["undefined-function"],
+  );
+  assert.deepEqual(
+    codes("'(load \"other.lisp\") (defun g () (missing-fn))"),
+    ["undefined-function"],
+  );
+});
+
+test("says Lispnt reads one file at a time in the unbound variable message", () => {
+  const found = diagnose("(defun g () (missing-var))");
+
+  assert.match(found[0]?.message ?? "", /one file at a time/);
+});
+
 test("does not report a standard name we do not implement", () => {
   assert.deepEqual(
     codes("(defun g () (loop for x in xs do (print x)))"),
@@ -208,10 +225,10 @@ test("downgrades arity when the function is defined twice", () => {
   assert.equal(found[0]?.severity, "warning");
 });
 
-test("points at loading another file in the undefined function message", () => {
+test("says Lispnt reads one file at a time in the undefined function message", () => {
   const found = diagnose("(defun g () (missing-fn))");
 
-  assert.match(found[0]?.message ?? "", /load that file first/);
+  assert.match(found[0]?.message ?? "", /one file at a time/);
 });
 
 test("binds the function a hash table iterator introduces", () => {

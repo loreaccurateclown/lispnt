@@ -55,7 +55,7 @@ function checkVariable(
   diagnostics.push({
     code: "unbound-variable",
     severity: "warning",
-    message: `${name} has no value here. If it comes from another file, load that file first.`,
+    message: `${name} has no value here. Lispnt reads one file at a time, so a binding from another file stays a warning.`,
     position: node.start,
     name,
   });
@@ -102,7 +102,7 @@ function checkCall(
     diagnostics.push({
       code: "undefined-function",
       severity: "warning",
-      message: `No function ${name} is defined in this file. If it comes from another file, load that file first.`,
+      message: `No function ${name} is defined in this file. Lispnt reads one file at a time, so a name from another file stays a warning unless the file has a top-level (load ...).`,
       position: head.start,
       name,
     });
