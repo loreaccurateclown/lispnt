@@ -38,8 +38,26 @@ test("only a top-level load silences undefined functions", () => {
   );
 });
 
+test("stays quiet about unbound variables when the file loads another", () => {
+  assert.deepEqual(
+    codes('(load "other.lisp") (defun g () (+ 1 missing-var))'),
+    [],
+  );
+});
+
+test("only a top-level load silences unbound variables", () => {
+  assert.deepEqual(
+    codes('(defun g () (load "other.lisp") (+ 1 missing-var))'),
+    ["unbound-variable"],
+  );
+  assert.deepEqual(
+    codes("'(load \"other.lisp\") (defun g () (+ 1 missing-var))"),
+    ["unbound-variable"],
+  );
+});
+
 test("says Lispnt reads one file at a time in the unbound variable message", () => {
-  const found = diagnose("(defun g () (missing-var))");
+  const found = diagnose("(defun g () (+ 1 missing-var))");
 
   assert.match(found[0]?.message ?? "", /one file at a time/);
 });

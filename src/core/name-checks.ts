@@ -22,7 +22,7 @@ export function checkNames(forms: AstNode[]): Diagnostic[] {
 
   walkWithScopes(forms, root, (node, scope) => {
     if (node.kind === "atom") {
-      checkVariable(node, scope, diagnostics);
+      checkVariable(node, scope, symbols, diagnostics);
       return;
     }
     if (node.kind !== "list") return;
@@ -37,6 +37,7 @@ export function checkNames(forms: AstNode[]): Diagnostic[] {
 function checkVariable(
   node: AtomNode,
   scope: Scope,
+  symbols: FileSymbols,
   diagnostics: Diagnostic[],
 ): void {
   const name = symbolWord(node);
@@ -52,10 +53,14 @@ function checkVariable(
   if (/^\d+\/\d+$/.test(name)) return;
   if (lookupVariable(scope, name) !== undefined) return;
 
+  // A file that loads another, or defines a structure in a way we cannot model
+  // (:include and the like), may define this name outside our view.
+  if (symbols.loadsAnotherFile || symbols.unmodelledStructures) return;
+
   diagnostics.push({
     code: "unbound-variable",
     severity: "warning",
-    message: `${name} has no value here. Lispnt reads one file at a time, so a binding from another file stays a warning.`,
+    message: `${name} has no value here. Lispnt reads one file at a time, so a binding from another file stays a warning unless the file has a top-level (load ...).`,
     position: node.start,
     name,
   });

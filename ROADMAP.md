@@ -3,8 +3,8 @@
 Read-only diagnostic path for Common Lisp (SBCL), alongside OLIVE.
 
 Working conventions are under "Agent working rules" below; this file is the
-long-form milestone plan. Totals today: 821 tests (73 reader, 101 analyze, 317
-interpreter, 49 print, 8 pipeline, 24 bindings, 48 scopes, 59 name-checks, 20
+long-form milestone plan. Totals today: 823 tests (73 reader, 101 analyze, 317
+interpreter, 49 print, 8 pipeline, 24 bindings, 48 scopes, 61 name-checks, 20
 hints, 40 trace, 24 trace-cases, 9 trace-tree, 10 value-hints, 39 extension).
 
 A note on labels: **Not implemented** marks a deliberate exclusion — a gap

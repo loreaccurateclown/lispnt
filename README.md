@@ -81,9 +81,9 @@ What it finds today:
   the common special forms, each saying where the missing piece belongs.
 - **Names.** Undefined functions, unbound variables, a variable called as a
   function, and argument counts — over every body in the file, whether or not
-  anything calls it. A top-level `(load …)` silences the undefined-function
-  warnings for that file: the names may come from the loaded file, and nothing is
-  read from disk to check.
+  anything calls it. A top-level `(load …)` silences both name warnings for that
+  file — undefined functions and unbound variables — because the names may come
+  from the loaded file, and nothing is read from disk to check.
 - **Runtime mistakes the file reaches,** such as a type error, an index out of
   range, or a division by zero.
 - **Reader mistakes:** unterminated strings, block comments and dotted pairs.
@@ -133,7 +133,7 @@ npm test           # builds, then runs each suite in turn
 npm run bench      # timings over the fixtures, LISP_CORPUS if set, and a size ladder
 ```
 
-`npm test` runs fourteen suites — 821 tests — in a couple of seconds. F5 from
+`npm test` runs fourteen suites — 823 tests — in a couple of seconds. F5 from
 this folder starts an Extension Development Host with Lispnt loaded
 (`.vscode/launch.json`).
 
@@ -190,10 +190,10 @@ is never reported as the learner's mistake. What is absent, by choice:
   precision (CL has bignums), and a float is single-float-shaped but printed as
   SBCL prints one, `1.0`.
 - **No console.** `(format t …)` returns NIL after discarding its text.
-- **`LOAD` is not followed.** A top-level `(load …)` silences undefined-function
-  warnings for the file, because the loaded file may define those names; nothing
-  is read from disk. Any other name from another file is a yellow mark, not a red
-  one.
+- **`LOAD` is not followed.** A top-level `(load …)` silences both name warnings
+  for the file — undefined functions and unbound variables — because the loaded
+  file may define them; nothing is read from disk. Any other name from another
+  file is a yellow mark, not a red one.
 
 ## License
 

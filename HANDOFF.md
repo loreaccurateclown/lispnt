@@ -32,8 +32,8 @@ here exists to shorten that loop.
 - The user has run the extension in a real editor and reported diagnostics,
   squiggles, messages, the trace view and the value hints working there.
 
-Tests: **821** across fourteen suites — 73 reader, 101 analyze, 317 interpreter,
-49 print, 8 pipeline, 24 bindings, 48 scopes, 59 name-checks, 20 hints, 40
+Tests: **823** across fourteen suites — 73 reader, 101 analyze, 317 interpreter,
+49 print, 8 pipeline, 24 bindings, 48 scopes, 61 name-checks, 20 hints, 40
 trace, 24 trace-cases, 9 trace-tree, 10 value-hints, 39 extension.
 
 Corpus (the manual check, no committed script): **63 files**, 26 under
@@ -205,8 +205,8 @@ one of each swapped pair is visible.
 - One float type over JavaScript numbers: integers beyond 2^53 lose precision, and
   a float prints as `1.0` like SBCL's single-float.
 - No console, so `format t` discards; there is no `*standard-output*`.
-- `LOAD` is not followed. A top-level `(load …)` silences undefined-function
-  warnings for the file; other names from another file are at most a warning.
+- `LOAD` is not followed. A top-level `(load …)` silences both name warnings for the file; other names
+  from another file are at most a warning.
 - A string is a vector of characters for `TYPEP`/`AREF`/`ARRAYP`/`VECTORP`, but it
   is a distinct value kind internally.
 
@@ -221,7 +221,7 @@ multi-line trace markers; trace-tree navigation. M7 (formatter) is optional.
 
 ## First moves in a new session
 
-1. `npm install` if needed, then `npm run build` and `npm test` — 821 tests,
+1. `npm install` if needed, then `npm run build` and `npm test` — 823 tests,
    about two seconds.
 2. Read `ROADMAP.md`'s Agent working rules before changing anything.
 3. The manifest, publisher id and repository URL are set; the remaining publish
