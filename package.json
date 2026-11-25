@@ -7,6 +7,17 @@
   "description": "Lispnt - a gentle, read-only diagnostic path for Common Lisp (SBCL), alongside OLIVE.",
   "license": "MIT",
   "icon": "media/icon.png",
+  "categories": [
+    "Linters",
+    "Education"
+  ],
+  "keywords": [
+    "common lisp",
+    "sbcl",
+    "lisp",
+    "linter",
+    "static analysis"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/loreaccurateclown/lispnt.git"
