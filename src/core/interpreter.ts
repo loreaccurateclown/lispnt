@@ -43,6 +43,7 @@ import {
 } from "./loop";
 import { printValue } from "./print";
 import { STANDARD_SYMBOLS } from "./standard-symbols";
+import { CONSTANTS } from "./constants";
 
 export class ReturnSignal {
   constructor(readonly value: LispValue) {}
@@ -75,6 +76,9 @@ export function createEnv(parent: Env | null): Env {
     env.vars.set("NIL", NIL);
     for (const [name, builtin] of builtins) {
       env.vars.set(name, builtin);
+    }
+    for (const [name, value] of CONSTANTS) {
+      if (!env.vars.has(name)) env.vars.set(name, value);
     }
   }
   return env;

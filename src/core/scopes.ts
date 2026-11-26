@@ -1,4 +1,5 @@
 import { builtins } from "./builtins";
+import { CONSTANTS } from "./constants";
 import type { AstNode, ListNode, Position } from "./reader";
 import { STANDARD_SYMBOLS } from "./standard-symbols";
 
@@ -73,6 +74,11 @@ export function createFileScope(symbols: FileSymbols): Scope {
 
   variables.set("T", { name: "T", kind: "global" });
   variables.set("NIL", { name: "NIL", kind: "global" });
+  // The standard constants are bound before user code runs, so reading one is
+  // never a name mistake.
+  for (const name of CONSTANTS.keys()) {
+    if (!variables.has(name)) variables.set(name, { name, kind: "global" });
+  }
 
   return { variables, functions, parent: null };
 }

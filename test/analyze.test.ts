@@ -866,6 +866,7 @@ test("the diagnostic showcase still demonstrates what it claims", () => {
     ],
     "names.lisp": ["unbound-variable", "undefined-function", "variable-as-function"],
     "trace-marker-empty.lisp": ["trace-marker"],
+    "constants.lisp": [],
     "quiet.lisp": [],
   };
 

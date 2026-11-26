@@ -142,7 +142,7 @@
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "bench": "npm run build && node bench/run.mjs",
-    "test": "npm run build && node dist/test/reader.test.js && node dist/test/analyze.test.js && node dist/test/interpreter.test.js && node dist/test/print.test.js && node dist/test/pipeline.test.js && node dist/test/bindings.test.js && node dist/test/scopes.test.js && node dist/test/name-checks.test.js && node dist/test/hints.test.js && node dist/test/trace.test.js && node dist/test/trace-cases.test.js && node dist/test/trace-tree.test.js && node dist/test/value-hints.test.js && node dist/test/extension.test.js"
+    "test": "npm run build && node dist/test/reader.test.js && node dist/test/analyze.test.js && node dist/test/interpreter.test.js && node dist/test/print.test.js && node dist/test/constants.test.js && node dist/test/pipeline.test.js && node dist/test/bindings.test.js && node dist/test/scopes.test.js && node dist/test/name-checks.test.js && node dist/test/hints.test.js && node dist/test/trace.test.js && node dist/test/trace-cases.test.js && node dist/test/trace-tree.test.js && node dist/test/value-hints.test.js && node dist/test/extension.test.js"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

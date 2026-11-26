@@ -32,9 +32,9 @@ here exists to shorten that loop.
 - The user has run the extension in a real editor and reported diagnostics,
   squiggles, messages, the trace view and the value hints working there.
 
-Tests: **823** across fourteen suites — 73 reader, 101 analyze, 317 interpreter,
-49 print, 8 pipeline, 24 bindings, 48 scopes, 61 name-checks, 20 hints, 40
-trace, 24 trace-cases, 9 trace-tree, 10 value-hints, 39 extension.
+Tests: **833** across fifteen suites — 73 reader, 101 analyze, 317 interpreter,
+49 print, 10 constants, 8 pipeline, 24 bindings, 48 scopes, 61 name-checks, 20
+hints, 40 trace, 24 trace-cases, 9 trace-tree, 10 value-hints, 39 extension.
 
 Corpus (the manual check, no committed script): **63 files**, 26 under
 `fixtures/cases/` and 37 from a local lab corpus,
@@ -85,6 +85,7 @@ markers run.
 | `src/core/loop.ts` | LOOP clause parser (fail-loud outside its subset) |
 | `src/core/builtins.ts` | the builtin table, TYPEP, equality, hash keys |
 | `src/core/values.ts` | value kinds, `numberValue`/`isFloatNumber` |
+| `src/core/constants.ts` | the ANSI and SB-EXT constants, values read from SBCL |
 | `src/core/print.ts` | `printValue` (readable and princ modes) |
 | `src/core/bindings.ts` | run the file and snapshot bindings per finished form |
 | `src/core/hints.ts` | hint runs (`hintsForLine`, `hintsInLines`, `hintAt`) |
@@ -106,7 +107,9 @@ test; entries }`), stream, values bundle, function, builtin. Numbers carry a
 `float?: boolean` flag set from the token (`1` integer, `1.0` float); arithmetic
 is a float when any operand is, and exact integer results stay integers. There
 are **no ratios**: `(/ 1 2)` is `0.5`, and a written `1/2` reads as a symbol.
-`eql`/`equal` keep `1` and `1.0` apart; `=` and `equalp` do not.
+`eql`/`equal` keep `1` and `1.0` apart; `=` and `equalp` do not. The public
+constants (ANSI and SB-EXT) are seeded into every root env and file scope from
+`constants.ts`.
 
 **Diagnostics.** `{ code, severity, message, position, end?, name?, arityInfo? }`.
 `end` is a range when the core knows the extent, else the presentation layer
@@ -221,7 +224,7 @@ multi-line trace markers; trace-tree navigation. M7 (formatter) is optional.
 
 ## First moves in a new session
 
-1. `npm install` if needed, then `npm run build` and `npm test` — 823 tests,
+1. `npm install` if needed, then `npm run build` and `npm test` — 833 tests,
    about two seconds.
 2. Read `ROADMAP.md`'s Agent working rules before changing anything.
 3. The manifest, publisher id and repository URL are set; the remaining publish

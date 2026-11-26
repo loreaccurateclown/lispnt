@@ -3,9 +3,10 @@
 Read-only diagnostic path for Common Lisp (SBCL), alongside OLIVE.
 
 Working conventions are under "Agent working rules" below; this file is the
-long-form milestone plan. Totals today: 823 tests (73 reader, 101 analyze, 317
-interpreter, 49 print, 8 pipeline, 24 bindings, 48 scopes, 61 name-checks, 20
-hints, 40 trace, 24 trace-cases, 9 trace-tree, 10 value-hints, 39 extension).
+long-form milestone plan. Totals today: 833 tests (73 reader, 101 analyze, 317
+interpreter, 49 print, 10 constants, 8 pipeline, 24 bindings, 48 scopes, 61
+name-checks, 20 hints, 40 trace, 24 trace-cases, 9 trace-tree, 10 value-hints,
+39 extension).
 
 A note on labels: **Not implemented** marks a deliberate exclusion — a gap
 Lispnt chose not to close because its value to a learner did not justify the
@@ -81,7 +82,8 @@ What Lispnt reads, checks, evaluates and shows:
 - **Evaluator** — `defun`/`lambda`, `if`/`cond`/`when`/`unless`, `let`/`let*`,
   `flet`/`labels`, `do`/`do*`/`dolist`/`dotimes`, a subset of `loop`, `case`/
   `ecase`/`ccase`, `defstruct`, hash tables, characters, strings, vectors,
-  integers and floats, compound type specifiers, `equalp`, multiple values,
+  integers and floats, constants (ANSI and SB-EXT), compound type specifiers,
+  `equalp`, multiple values,
   lambda lists, keyword arguments, `format`'s common directives,
   string output streams, `sort`/`count`/`getf`, `error`, and a step budget.
 - **Trace** — `;;[trace] (call)` markers, one line per call with its result, and

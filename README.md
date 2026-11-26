@@ -133,7 +133,7 @@ npm test           # builds, then runs each suite in turn
 npm run bench      # timings over the fixtures, LISP_CORPUS if set, and a size ladder
 ```
 
-`npm test` runs fourteen suites — 823 tests — in a couple of seconds. F5 from
+`npm test` runs fifteen suites — 833 tests — in a couple of seconds. F5 from
 this folder starts an Extension Development Host with Lispnt loaded
 (`.vscode/launch.json`).
 
@@ -188,7 +188,9 @@ is never reported as the learner's mistake. What is absent, by choice:
   `(/ 1 2)` is `0.5`, not `1/2`.
 - **One float type, JavaScript numbers underneath.** Integers beyond 2^53 lose
   precision (CL has bignums), and a float is single-float-shaped but printed as
-  SBCL prints one, `1.0`.
+  SBCL prints one, `1.0`. The SBCL constants inherit this: `most-positive-fixnum`
+  and `most-positive-word` are approximate, and the short/single-float constants
+  carry their double value.
 - **No console.** `(format t …)` returns NIL after discarding its text.
 - **`LOAD` is not followed.** A top-level `(load …)` silences both name warnings
   for the file — undefined functions and unbound variables — because the loaded
